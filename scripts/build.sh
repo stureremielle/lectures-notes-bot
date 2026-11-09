@@ -49,8 +49,11 @@ if [ -n "$ROOTDIR" ]; then
   rm -f "$ROOTDIR/.lnb-write-test"
   ok_dir="$ROOTDIR/buildkit"
   if [ "$LEGACY" = "0" ] && [ ! -d "$ok_dir" ]; then
-    warn "BuildKit cache tidak ada di $ok_dir — akan memakai builder klasik"
-    LEGACY=1
+    warn "BuildKit cache tidak ada di $ok_dir (sisa power cut / data root baru)."
+    warn "Biasanya cukup: sudo systemctl restart docker  lalu build lagi."
+    warn "Kalau masih gagal: sudo rm -rf $ok_dir"
+    warn "Catatan: '--legacy' hanya bekerja tanpa containerd image store;"
+    warn "setup ini memakai containerd snapshots, jadi tetap pakai builder baru."
   fi
 fi
 
