@@ -20,6 +20,23 @@ need_docker
 ENVFILE="$HOST_DIR/.env.runtime"
 MOUNT_CFG="$HOST_DIR/config.yaml"
 
+# Optional: use a specific env file (e.g. after a fresh clone, when no container
+# exists to read the environment from).
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --env-file)
+      shift
+      [ "$#" -gt 0 ] || die "--env-file butuh sebuah path"
+      ENVFILE="$1" ;;
+    --help)
+      sed -n '2,12p' "$0"
+      exit 0 ;;
+    *)
+      die "opsi tidak dikenal: $1 (pakai: --env-file PATH)" ;;
+  esac
+  shift
+done
+
 if [ ! -f "$MOUNT_CFG" ]; then
   die "$MOUNT_CFG tidak ada — jalankan dulu: sudo $HOST_DIR/scripts/config.sh install"
 fi
@@ -48,9 +65,12 @@ if docker inspect "$APP_NAME" >/dev/null 2>&1; then
 elif [ -f "$ENVFILE" ]; then
   warn "container $APP_NAME tidak ada; memakai $ENVFILE yang sudah tersimpan"
 else
-  die "tidak ada container maupun $ENVFILE. Buat file itu berisi 6 baris KEY=value
-    (TZ, OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL, DISCORD_NOTES_WEBHOOK,
-    DISCORD_CALENDAR_WEBHOOK) lalu ulangi."
+  die "tidak ada container $APP_NAME dan tidak ada $ENVFILE.
+    Buat dari template lalu isi:
+      cp $HOST_DIR/.env.runtime.example $ENVFILE && chmod 600 $ENVFILE
+      nano $ENVFILE
+    (6 baris: TZ, OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL,
+     DISCORD_NOTES_WEBHOOK, DISCORD_CALENDAR_WEBHOOK)"
 fi
 
 # 2. Show what will be used, without printing the values.
