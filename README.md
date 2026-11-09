@@ -55,6 +55,24 @@ sudo /tmp/lnb/scripts/setup-box.sh          # clone ke /opt/lecture-notes-bot, b
 lalu ikuti langkah Portainer yang dicetak skrip itu (stack **Repository**,
 `refs/heads/main`, compose path `docker-compose.portainer.yml`).
 
+### Diagnosa cepat: `scripts/doctor.sh`
+
+Portainer tidak menampilkan status apa pun setelah *Update the stack*, jadi cek
+dari terminal:
+
+```bash
+sudo /opt/lecture-notes-bot/scripts/doctor.sh
+```
+
+Keluarannya baris `[ OK ]` / `[WARN]` / `[FAIL]` untuk: container & restart
+count, umur image vs container, path bind mount `config.yaml` (file / direktori /
+hilang), lima secret di dalam container, config yang benar-benar dibaca
+aplikasi, ringkasan state di volume, dan 12 baris log terakhir. Exit code 1 bila
+ada `[FAIL]`; tambahkan `--logs` untuk mengikuti log setelahnya.
+
+`sudo scripts/config.sh status` hanya menampilkan path config yang dipakai
+container beserta isi path tersebut (file / direktori / tidak ada).
+
 ### Soal file `config.yaml` di stack
 
 Stack meng-bind-mount `/opt/lecture-notes-bot/config.yaml` (folder clone repo).
