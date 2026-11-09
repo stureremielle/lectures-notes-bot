@@ -49,10 +49,14 @@ else
   ok "restart count: $RESTARTS"
 fi
 C_CREATED=$(docker inspect -f '{{.Created}}' "$APP_NAME" | cut -c1-19)
-if [ -n "${IMG_CREATED:-}" ] && [ "$(printf '%s' "$IMG_CREATED" | cut -c1-19)" \> "$C_CREATED" ]; then
-  warn "image lebih baru dari container — klik 'Update the stack' di Portainer"
+C_IMAGE_ID=$(docker inspect -f '{{.Image}}' "$APP_NAME" 2>/dev/null || true)
+IMG_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
+if [ -n "$C_IMAGE_ID" ] && [ -n "$IMG_ID" ] && [ "$C_IMAGE_ID" = "$IMG_ID" ]; then
+  ok "container memakai image terbaru ($(printf '%s' "$IMG_ID" | cut -c8-19))"
 else
-  ok "container memakai image terbaru"
+  warn "container memakai image lama — klik 'Update the stack' di Portainer"
+  printf '         container: %s\n' "$(printf '%s' "$C_IMAGE_ID" | cut -c8-19)"
+  printf '         %-9s %s\n' "latest:" "$(printf '%s' "$IMG_ID" | cut -c8-19)"
 fi
 
 head_ "Repositori ($HOST_DIR)"

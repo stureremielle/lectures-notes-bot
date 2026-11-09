@@ -92,6 +92,24 @@ case "$cmd" in
     say "Status: OK — sekarang klik 'Update the stack' di Portainer (atau scripts/restart.sh)"
     ;;
 
+  sync)
+    # Refresh config.yaml from config.example.yaml (new defaults such as
+    # watch.ignore_ids never reach an older copy otherwise). The old file is
+    # always kept as a timestamped backup.
+    [ -f "$TARGET" ] || die "belum ada file di $TARGET — jalankan dulu: config.sh install"
+    if cmp -s "$TARGET" "$(dirname "$0")/../config.example.yaml"; then
+      say "Sudah sama dengan config.example.yaml ($TARGET)"
+      exit 0
+    fi
+    BAK="$TARGET.bak-$(date +%Y%m%d-%H%M%S)"
+    cp "$TARGET" "$BAK"
+    cp "$(dirname "$0")/../config.example.yaml" "$TARGET"
+    chmod 644 "$TARGET"
+    say "config.yaml disegarkan dari example; cadangan: $BAK"
+    printf '  perbedaan lama vs baru: diff -u %s %s\n' "$BAK" "$TARGET"
+    say "Berlaku pada tick berikutnya (tanpa restart). Cek: config.sh check"
+    ;;
+
   edit)
     [ -f "$TARGET" ] || die "belum ada file di $TARGET — jalankan dulu: sudo $HOST_DIR/scripts/config.sh install"
     EDITOR_BIN="${EDITOR:-nano}"
@@ -112,6 +130,6 @@ case "$cmd" in
     ;;
 
   *)
-    die "perintah tidak dikenal: $cmd (pakai: status|path|install|edit|check)"
+    die "perintah tidak dikenal: $cmd (pakai: status|path|install|sync|edit|check)"
     ;;
 esac
