@@ -42,6 +42,7 @@ milik stack. `update.sh` menampilkan ringkasan state sebelum dan sesudah build.
 | Edit config.yaml | `sudo ./scripts/config.sh edit` |
 | Cek semua playlist punya URL | `sudo ./scripts/config.sh check` |
 | Jalankan CLI di container (state yang sama) | `sudo ./scripts/bot.sh run --playlist "<URL>" --force --limit 1` |
+| Recreate container tanpa Portainer | `./scripts/recreate.sh` (memakai ulang env dari container lama) |
 | Ringkasan state | `sudo ./scripts/bot.sh state` |
 | Log | `docker logs --tail 50 -f lecture-notes-bot` |
 

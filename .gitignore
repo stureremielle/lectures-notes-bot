@@ -1,5 +1,6 @@
 # --- secrets ---------------------------------------------------------------
 .env
+.env.runtime
 config.yaml
 # backups made by scripts/config.sh (install moves a stray directory aside,
 # sync keeps a copy of the previous file)
