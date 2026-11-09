@@ -59,6 +59,32 @@ else
   printf '         %-9s %s\n' "latest:" "$(printf '%s' "$IMG_ID" | cut -c8-19)"
 fi
 
+head_ "Docker data root (deteksi drive yang belum ter-mount)"
+ROOTDIR=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+if [ -n "$ROOTDIR" ]; then
+  MP=$(findmnt -n -o TARGET -T "$ROOTDIR" 2>/dev/null || echo '?')
+  say "root: $ROOTDIR (mount: $MP)"
+  case "$ROOTDIR" in
+    /var/lib/docker|/var/lib/docker/*)
+      ok "lokasi standar di disk internal" ;;
+    *)
+      if [ "$MP" = "/" ]; then
+        bad "data root BUKAN di mount terpisah — drive eksternal kemungkinan belum ter-mount saat docker start"
+        printf '         container/image lama masih di drive itu; cek: findmnt /extdrive/ext1 ; sudo systemctl restart docker\n'
+      elif [ "$MP" = "?" ] || [ -z "$MP" ]; then
+        warn "tidak bisa memeriksa mount dari $ROOTDIR (findmnt tidak tersedia?)"
+      else
+        ok "di mount $MP"
+      fi ;;
+  esac
+fi
+VOL_MP=$(docker volume inspect lecture-notes-data -f '{{.Mountpoint}}' 2>/dev/null || true)
+if [ -n "$VOL_MP" ]; then
+  ok "volume lecture-notes-data: $VOL_MP"
+else
+  warn "volume lecture-notes-data belum ada (state dimulai dari kosong)"
+fi
+
 head_ "Repositori ($HOST_DIR)"
 INVOKER="${SUDO_USER:-$(id -un)}"
 if [ -d "$HOST_DIR/.git" ]; then
