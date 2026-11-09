@@ -251,6 +251,7 @@ def normalise_assignment(
     course: str,
     video: dict,
     resolve_relative: bool = True,
+    class_weekday: Optional[int] = None,
 ) -> Optional[dict]:
     if isinstance(item, str):
         item = {"text": item}
@@ -271,7 +272,9 @@ def normalise_assignment(
     if due_date is None and resolve_relative and due_text:
         anchor = relativedates.anchor_date(video)
         if anchor is not None:
-            inferred, rule = relativedates.resolve_relative_date(due_text, anchor)
+            inferred, rule = relativedates.resolve_relative_date(
+                due_text, anchor, class_weekday
+            )
             if inferred is not None:
                 due_date, due_inferred, due_rule = inferred, True, rule
                 log.info(
@@ -437,6 +440,7 @@ def extract_assignments(client, cfg, video: dict, transcript: str) -> list[dict]
             _course_of(video),
             video,
             resolve_relative=cfg.get_bool("assignments.resolve_relative_dates", True),
+            class_weekday=cfg.class_weekday(_course_of(video)),
         )
         if norm is None or norm["key"] in seen:
             continue
@@ -500,10 +504,17 @@ def normalise(raw: Optional[dict], video: dict, cfg=None) -> Optional[dict]:
     if not isinstance(assignments_raw, list):
         assignments_raw = []
     resolve_relative = True if cfg is None else cfg.get_bool("assignments.resolve_relative_dates", True)
+    class_weekday = cfg.class_weekday(course) if cfg is not None else None
     assignments: list[dict] = []
     seen: set[str] = set()
     for item in assignments_raw:
-        norm = normalise_assignment(item, course, video, resolve_relative=resolve_relative)
+        norm = normalise_assignment(
+            item,
+            course,
+            video,
+            resolve_relative=resolve_relative,
+            class_weekday=class_weekday,
+        )
         if norm is None:
             continue
         if norm["key"] in seen:

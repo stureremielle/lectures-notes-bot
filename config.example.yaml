@@ -118,6 +118,21 @@ logging:
   level: "INFO"
 
 # -----------------------------------------------------------------------------
+# Weekly schedule — only WHICH DAY each course meets, never rooms or hours.
+# Used to anchor relative deadlines: "minggu depan" in a Monday lecture lands on
+# the next Monday this course actually meets, so a lecture uploaded a day late
+# does not shift the deadline.
+# -----------------------------------------------------------------------------
+schedule:
+  Sistem Penunjang Keputusan: ["Senin"]
+  Sistem Multimedia: ["Selasa"]
+  Pengelolaan Proyek Sistem Informasi: ["Selasa"]
+  Testing dan Implementasi Sistem: ["Rabu"]
+  Business Intelligence: ["Jumat"]
+  Sistem Terdistribusi: ["Jumat"]
+  Analisis Kinerja Sistem: ["Sabtu"]
+
+# -----------------------------------------------------------------------------
 # Playlists.
 #
 # ONE playlist can hold every course of the semester. In that case the course of

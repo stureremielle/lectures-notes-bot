@@ -185,8 +185,20 @@ kuliah membawa **tanggal kelas** (upload date, atau tanggal di judul seperti
 | akhir bulan | 30 Sep 2026 |
 | **minggu ketiga**, minggu ini, akhir minggu ini | **tetap `null`** (ambigu) |
 
-Tidak perlu mengisi jadwal kuliah: patokannya tanggal video itu sendiri. Tanggal
-hasil hitungan **ditandai** di catatan dan pengingat:
+Tidak perlu mengisi jadwal kuliah untuk kasus normal: patokannya tanggal video
+itu sendiri. Tapi kalau jadwal mingguan diisi, `"minggu depan"` dipatok ke
+**hari kuliah mata kuliah itu**, bukan sekadar `+7 hari` — jadi kalau dosen
+mengunggah rekaman Senin pada Selasa, tenggatnya tetap jatuh hari Senin:
+
+```yaml
+# hanya HARI, tanpa ruang atau jam
+schedule:
+  Sistem Penunjang Keputusan: ["Senin"]
+  Testing dan Implementasi Sistem: ["Rabu"]
+  Analisis Kinerja Sistem: ["Sabtu"]
+```
+
+Tanggal hasil hitungan **ditandai** di catatan dan pengingat:
 
 > Tenggat: **Senin, 5 Oktober 2026** pukul 23.59 WITA
 > _Tanggal ditafsirkan dari ucapan dosen "minggu depan" pada tanggal kuliah._

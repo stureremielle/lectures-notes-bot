@@ -651,6 +651,77 @@ class TestRelativeDueDates(unittest.TestCase):
         self.assertIsNone(note["assignments"][0]["due_date"])
 
 
+class TestScheduleAnchoring(unittest.TestCase):
+    """The weekly schedule fixes deadlines when a lecture is uploaded late."""
+
+    MONDAY = dt.date(2026, 9, 28)
+    TUESDAY = dt.date(2026, 9, 29)
+
+    def test_parse_weekday(self):
+        from src.relativedates import parse_weekday
+
+        self.assertEqual(parse_weekday("Senin"), 0)
+        self.assertEqual(parse_weekday("rabu"), 2)
+        self.assertEqual(parse_weekday("Jumat"), 4)
+        self.assertEqual(parse_weekday("Minggu"), 6)  # schedule context = Sunday
+        self.assertEqual(parse_weekday("1"), 0)
+        self.assertIsNone(parse_weekday("someday"))
+
+    def test_schedule_from_example_config(self):
+        from src.config import load_config
+
+        cfg = load_config(Path(__file__).resolve().parent.parent / "config.example.yaml")
+        self.assertEqual(cfg.class_weekday("Sistem Penunjang Keputusan"), 0)  # Senin
+        self.assertEqual(cfg.class_weekday("Testing dan Implementasi Sistem"), 2)  # Rabu
+        self.assertEqual(cfg.class_weekday("Analisis Kinerja Sistem"), 5)  # Sabtu
+        self.assertIsNone(cfg.class_weekday("Kuliah Tidak Dikenal"))
+
+    def test_next_weekday_after(self):
+        from src.relativedates import next_weekday_after
+
+        self.assertEqual(next_weekday_after(self.MONDAY, 0), dt.date(2026, 10, 5))
+        self.assertEqual(next_weekday_after(self.TUESDAY, 0), dt.date(2026, 10, 5))
+        self.assertEqual(next_weekday_after(self.MONDAY, 2), dt.date(2026, 9, 30))
+
+    def test_late_upload_keeps_the_class_day(self):
+        from src.relativedates import resolve_relative_date
+
+        monday = resolve_relative_date("minggu depan", self.MONDAY, 0)[0]
+        late = resolve_relative_date("minggu depan", self.TUESDAY, 0)[0]
+        self.assertEqual(monday, dt.date(2026, 10, 5))
+        self.assertEqual(late, dt.date(2026, 10, 5))  # same Monday, not Tuesday
+        self.assertEqual(late.weekday(), 0)
+
+    def test_two_weeks_with_schedule(self):
+        from src.relativedates import resolve_relative_date
+
+        got = resolve_relative_date("dua minggu lagi", self.TUESDAY, 0)[0]
+        self.assertEqual(got, dt.date(2026, 10, 12))
+        self.assertEqual(got.weekday(), 0)
+
+    def test_notes_use_the_course_weekday(self):
+        from src.config import Config
+
+        cfg = Config(
+            {
+                "assignments": {"resolve_relative_dates": True},
+                "schedule": {"Sistem Penunjang Keputusan": ["Senin"]},
+            }
+        )
+        # Lecture recorded on a Tuesday, but SPK meets on Monday.
+        video = {
+            "id": "v",
+            "title": "SPK M1 2026 09 29",
+            "upload_date": "20260929",
+            "course": "Sistem Penunjang Keputusan",
+        }
+        raw = {"summary": "S.", "assignments": [{"text": "Tugas", "due_text": "minggu depan"}]}
+        note = notes.normalise(raw, video, cfg)
+        due = dt.date.fromisoformat(note["assignments"][0]["due_date"])
+        self.assertEqual(due, dt.date(2026, 10, 5))
+        self.assertEqual(due.weekday(), 0)
+
+
 class TestReminders(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

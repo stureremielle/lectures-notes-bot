@@ -85,8 +85,34 @@ def _last_day_of_month(d: dt.date) -> dt.date:
     return nxt - dt.timedelta(days=1)
 
 
-def resolve_relative_date(text: str, anchor: Optional[dt.date]) -> tuple[Optional[dt.date], str]:
+_ALL_DAYS = dict(_WEEKDAYS)
+_ALL_DAYS["minggu"] = 6  # in a *schedule* context "minggu" is Sunday, not "week"
+
+
+def parse_weekday(name: str) -> Optional[int]:
+    """'Senin' -> 0 … 'Minggu' -> 6 (schedule context, so no week ambiguity)."""
+    key = str(name or "").strip().lower()
+    if key.isdigit():
+        value = int(key)
+        return value - 1 if 1 <= value <= 7 else None
+    return _ALL_DAYS.get(key)
+
+
+def next_weekday_after(anchor: dt.date, weekday: int) -> dt.date:
+    """First occurrence of ``weekday`` strictly after ``anchor``."""
+    delta = (weekday - anchor.weekday()) % 7
+    return anchor + dt.timedelta(days=delta or 7)
+
+
+def resolve_relative_date(
+    text: str,
+    anchor: Optional[dt.date],
+    class_weekday: Optional[int] = None,
+) -> tuple[Optional[dt.date], str]:
     """Resolve one relative phrase against the lecture date.
+
+    ``class_weekday`` (from the course schedule) makes "minggu depan" land on
+    the day that course actually meets, which survives a wrong upload date.
 
     Returns ``(date, rule)``; ``(None, "")`` when it cannot be resolved safely.
     Only the *first* recognisable phrase is used, and weekday names are only
@@ -105,6 +131,10 @@ def resolve_relative_date(text: str, anchor: Optional[dt.date]) -> tuple[Optiona
     if m:
         weeks = _weeks_from(m)
         if 1 <= weeks <= 12:
+            if class_weekday is not None:
+                first = next_weekday_after(anchor, class_weekday)
+                target = first + dt.timedelta(weeks=weeks - 1)
+                return target, f"{weeks} minggu setelah kuliah (hari kuliah)"
             return anchor + dt.timedelta(weeks=weeks), f"{weeks} minggu setelah kuliah"
 
     if _END_MONTH_RE.search(lowered):

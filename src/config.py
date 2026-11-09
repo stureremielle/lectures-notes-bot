@@ -287,6 +287,35 @@ class Config(Section):
             )
         return result
 
+    def schedule(self) -> dict[str, list[int]]:
+        """Course -> meeting weekdays (0=Monday … 6=Sunday), from ``schedule:``.
+
+        Rooms and class hours are deliberately not modelled; only *which day* a
+        course meets, which is what relative deadlines need.
+        """
+        from .relativedates import parse_weekday
+
+        raw = self.get("schedule", {})
+        if isinstance(raw, Section):
+            raw = raw.as_dict()
+        if not isinstance(raw, dict):
+            return {}
+        out: dict[str, list[int]] = {}
+        for course, days in raw.items():
+            if isinstance(days, str):
+                days = [d for d in days.replace(";", ",").split(",") if d.strip()]
+            if not isinstance(days, (list, tuple)):
+                continue
+            parsed = [d for d in (parse_weekday(x) for x in days) if d is not None]
+            if parsed:
+                out[str(course).strip()] = sorted(set(parsed))
+        return out
+
+    def class_weekday(self, course: str) -> Optional[int]:
+        """First meeting weekday of ``course`` (0=Monday), or None if unknown."""
+        days = self.schedule().get(str(course or "").strip())
+        return days[0] if days else None
+
     def validate_for_run(self) -> list[str]:
         """Return a list of human-readable warnings (never raises for content)."""
         warns: list[str] = []
