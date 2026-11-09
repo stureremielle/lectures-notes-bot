@@ -1,6 +1,10 @@
 # --- secrets ---------------------------------------------------------------
 .env
 config.yaml
+# backups made by scripts/config.sh (install moves a stray directory aside,
+# sync keeps a copy of the previous file)
+config.yaml.dir-bak-*/
+config.yaml.bak-*
 *.cookies.txt
 cookies.txt
 
