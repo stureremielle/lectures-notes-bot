@@ -24,8 +24,12 @@
 #   * no `build:` — Portainer resolves relative build contexts under
 #     /data/compose/<id>/, not where your sources live;
 #   * no `env_file:` — secrets live in Portainer's environment variables;
-#   * config.yaml is bind-mounted from an absolute host path (and is NOT
-#     overwritten by git pulls, so playlist URLs survive updates);
+#   * config.yaml is bind-mounted from /opt/lecture-notes-bot/config.yaml.
+#     That file MUST exist before the stack is deployed: Docker creates an
+#     empty DIRECTORY when a bind-mount source is missing, which then fails
+#     with "Is a directory". Create it with:
+#       sudo /opt/lecture-notes-bot/scripts/config.sh install
+#     git pull never touches it (it is gitignored), so URLs survive updates;
 #   * /app/data lives on a named volume so state survives every recreate.
 #
 # If your stack id is not 1, change the config path below to the one Portainer
@@ -45,7 +49,7 @@ services:
       - DISCORD_NOTES_WEBHOOK=${DISCORD_NOTES_WEBHOOK}
       - DISCORD_CALENDAR_WEBHOOK=${DISCORD_CALENDAR_WEBHOOK}
     volumes:
-      - /data/compose/1/config.yaml:/app/config.yaml:ro
+      - /opt/lecture-notes-bot/config.yaml:/app/config.yaml:ro
       # Alternative, independent of the stack id: bind a host directory and
       # set LECTURE_BOT_CONFIG instead (scripts/config.sh manages that file).
       # - /opt/lecture-notes-bot:/app/config:ro

@@ -57,12 +57,28 @@ lalu ikuti langkah Portainer yang dicetak skrip itu (stack **Repository**,
 
 ### Soal file `config.yaml` di stack
 
-Portainer menyimpan stack Repository di `/data/compose/<id>/…` dan menyalin
-`config.yaml` yang di-upload ke editor menjadi file di folder itu — tapi file
-yang di-upload **tidak ditimpa** oleh tarikan git berikutnya, jadi aman.
-compose meng-bind-mount `/data/compose/1/config.yaml`; kalau ID stack Anda
-bukan `1`, ubah satu baris itu (lihat `docker inspect lecture-notes-bot`) atau
-pakai alternatif bind direktori yang sudah dicatat di komentar compose.
+Stack meng-bind-mount `/opt/lecture-notes-bot/config.yaml` (folder clone repo).
+File itu **harus sudah ada sebelum stack di-deploy**: kalau source bind mount
+tidak ada, Docker membuat **direktori kosong** dan container gagal dengan
+`IsADirectoryError: Is a directory: '/app/config.yaml'`.
+
+```bash
+sudo /opt/lecture-notes-bot/scripts/config.sh install   # buat dari config.example.yaml
+```
+
+`config.yaml` masuk `.gitignore`, jadi `git pull` tidak pernah menimpanya.
+Kalau terlanjur ada direktori di path itu, hapus dulu lalu Deploy/Update stack:
+
+```bash
+docker inspect lecture-notes-bot --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
+docker rm -f lecture-notes-bot
+```
+
+**Jangan** menjalankan `docker compose up -d` manual dari folder clone: compose
+akan mensubstitusi `${OPENAI_API_KEY}` dsb. menjadi string kosong, karena
+variabel itu diberikan Portainer ke *container*, bukan ke shell Anda — bot akan
+hidup tanpa secret. Pakai `scripts/restart.sh` (docker restart, env utuh) atau
+tombol **Update the stack** di Portainer.
 
 ### Kenapa image di-build di box, bukan di GitHub Actions
 
