@@ -214,12 +214,13 @@ class DiscordWebhook:
         return payload
 
     # -- public API -------------------------------------------------------
-    def send_text(self, content: str) -> bool:
+    def send_text(self, content: str, allowed_mentions: Optional[dict] = None) -> bool:
         ok = True
+        mentions = allowed_mentions if allowed_mentions is not None else {"parse": []}
         for chunk in split_message(content):
             payload = self._base_payload()
             payload["content"] = chunk
-            payload["allowed_mentions"] = {"parse": []}
+            payload["allowed_mentions"] = mentions
             ok = self._post(payload) and ok
         return ok
 

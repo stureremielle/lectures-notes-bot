@@ -142,11 +142,33 @@ ada soal review.
 
 ### Channel `#calendar`
 
-* daftar tugas per kuliah saat catatan baru diproses,
-* pengingat T-1 / T-0,
-* PNG kalender bulanan (sekali per minggu ISO, `attachment://calendar.png`),
-* pembuat `.ics` (tersedia lewat `src.assignments.build_ics`, bisa dipakai untuk
-  melampirkan berkas ke channel).
+Default: **pengingat saja** — satu pesan berisi ping saat ada tenggat **besok**
+(T-1), lengkap dengan mata kuliah, tanggal, dan menit transkrip sumbernya.
+
+```yaml
+reminders:
+  days_before: [1]        # hanya sehari sebelum
+  mention: "@everyone"    # "", "@here", atau "role:<id>" bila tak ingin ping
+calendar:
+  post_assignment_lists: false   # daftar tugas per kuliah
+  post_ics: false                # lampiran .ics
+  image:
+    enabled: false               # PNG bulanan (statis, bukan kalender hidup)
+```
+
+Yang bisa dinyalakan kembali kapan saja:
+
+* `post_assignment_lists: true` — daftar tugas per kuliah saat catatan diproses,
+* `post_ics: true` — lampiran `.ics` untuk diimpor ke kalender pribadi,
+* `image.enabled: true` — PNG grid bulanan 900×1020, **sekali per minggu ISO**
+  pada `image.weekday`. Ini gambar statis: hanya diposting seminggu sekali dan
+  tidak berubah sampai minggu berikutnya, jadi tidak bisa dijadikan kalender
+  hidup. Kalau butuh yang selalu terbaru, pakai `.ics` (diimpor ke Google
+  Calendar, ikut berubah saat tugas baru masuk) atau tombol
+  `calendar-image` untuk membuat PNG kapan saja.
+
+> Catatan: dengan satu kali tick 19:00, pengingat T-1 keluar **19:00 sehari
+> sebelumnya** (≈29 jam sebelum tenggat 23.59 WITA).
 
 ---
 

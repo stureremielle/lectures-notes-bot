@@ -206,7 +206,7 @@ def render_list(
     return "\n".join(lines).strip()
 
 
-def render_reminder(item: dict, offset: int, today: _dt.date) -> str:
+def render_reminder(item: dict, offset: int, today: _dt.date, mention: str = "") -> str:
     d = parse_date(item.get("due_date"))
     if offset == 0:
         head = "⏰ **Tenggat HARI INI**"
@@ -214,15 +214,24 @@ def render_reminder(item: dict, offset: int, today: _dt.date) -> str:
         head = "⏰ **Tenggat BESOK**"
     else:
         head = f"⏰ **Tenggat {offset} hari lagi**"
-    lines = [head, "", f"{type_emoji(item.get('type'))} {item.get('text')}"]
+    lines: list[str] = []
+    if mention:
+        lines.append(mention)
+    lines.append(head)
+    lines.append("")
+    lines.append(f"{type_emoji(item.get('type'))} **{item.get('text')}**")
     if item.get("course"):
         lines.append(f"Mata kuliah: **{item['course']}**")
     if d:
-        lines.append(f"Tenggat: **{format_date_id(d)}** pukul 23.59 WITA ({d.isoformat()})")
+        lines.append(f"Tenggat: **{format_date_id(d)}** pukul 23.59 WITA")
+        lines.append(f"_{d.isoformat()} · sisa {(d - today).days} hari_")
+    elif item.get("due_text"):
+        lines.append(f"Tenggat menurut dosen: **{item['due_text']}** (tanggal belum dipastikan)")
     if item.get("video_url"):
-        lines.append(f"Sumber: {item['video_url']}" + (
-            f" (menit {item['timestamp']})" if item.get("timestamp") else ""
-        ))
+        src = f"Sumber: {item['video_url']}"
+        if item.get("timestamp"):
+            src += f" (menit {item['timestamp']})"
+        lines.append(src)
     if str(item.get("confidence")) == "low":
         lines.append("_Keyakinan rendah — tugas ini mungkin tidak benar-benar ditugaskan._")
     return "\n".join(lines)

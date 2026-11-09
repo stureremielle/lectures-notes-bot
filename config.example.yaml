@@ -45,8 +45,10 @@ reminders:
   # ALL date math uses this zone. WITA — not WIB.
   timezone: "Asia/Makassar"
 
-  # Offsets (in days) before the due date that get a reminder. 1 = T-1, 0 = T-0.
-  days_before: [1, 0]
+  # Offsets (in days) before the due date that get a reminder. 1 = T-1 (the day
+  # before), 0 = T-0 (the due date itself). Default is T-1 only, so #calendar
+  # is a "besok ada tenggat" channel rather than a feed.
+  days_before: [1]
 
   # Earliest time of day the reminder pass may send (WITA).
   # IMPORTANT: this MUST be earlier than the first entry of
@@ -54,6 +56,10 @@ reminders:
   # runs after the window opened and nothing fires on time. With the default
   # 19:00 tick, keep this at 08:00.
   send_time_local: "08:00"
+
+  # Ping attached to every reminder: "@everyone", "@here", "role:<id>", or ""
+  # to disable. Discord needs it in allowed_mentions, which the bot handles.
+  mention: "@everyone"
 
 watch:
   # "HH:MM" (string) or a list. Interpreted in reminders.timezone.
@@ -78,11 +84,15 @@ watch:
   backfill_order: "oldest"
 
 calendar:
+  # #calendar is reminder-only by default: it pings when a deadline is one day
+  # away. The extras below are off; turn them on if you want them back.
+  post_assignment_lists: false
+  post_ics: false
   image:
-    enabled: true
-    # 900x1020 month grid, posted once per ISO week on this weekday.
+    # Weekly 900x1020 month-grid PNG. Off by default: it is a static picture,
+    # not a live calendar. Enable if you want the picture once per ISO week.
+    enabled: false
     weekday: "monday"
-    # If today is within this many days of the end of the month, draw next month.
     lead_days: 7
     output_dir: "data/calendar"
 

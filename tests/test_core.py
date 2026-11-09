@@ -525,6 +525,59 @@ class TestAssignmentSecondPass(unittest.TestCase):
         )
 
 
+class TestReminderMention(unittest.TestCase):
+    """#calendar is reminder-only; the ping must be explicit and allowed."""
+
+    ITEM = {
+        "text": "Tugas kelompok: paper A4 + dua PPT",
+        "type": "tugas",
+        "course": "Sistem Penunjang Keputusan",
+        "due_date": "2026-10-10",
+        "confidence": "high",
+        "key": "k1",
+    }
+
+    def test_render_with_mention(self):
+        text = A.render_reminder(self.ITEM, 1, dt.date(2026, 10, 9), mention="@everyone")
+        self.assertTrue(text.startswith("@everyone"))
+        self.assertIn("Tenggat BESOK", text)
+        self.assertIn("Sabtu, 10 Oktober 2026", text)
+        self.assertIn("sisa 1 hari", text)
+        self.assertIn("Sistem Penunjang Keputusan", text)
+
+    def test_no_mention(self):
+        text = A.render_reminder(self.ITEM, 1, dt.date(2026, 10, 9))
+        self.assertFalse(text.startswith("@"))
+
+    def test_mention_config(self):
+        from src.config import Config
+
+        cases = {
+            "@everyone": ("@everyone", {"parse": ["everyone"]}),
+            "everyone": ("@everyone", {"parse": ["everyone"]}),
+            "here": ("@here", {"parse": ["here"]}),
+            "role:42": ("<@&42>", {"roles": ["42"]}),
+            "none": ("", {"parse": []}),
+            "": ("", {"parse": []}),
+        }
+        for value, (mention, allowed) in cases.items():
+            cfg = Config({"reminders": {"mention": value}})
+            got = reminders.mention_of(cfg)
+            self.assertEqual(got, mention, value)
+            self.assertEqual(reminders.allowed_mentions_for(got), allowed, value)
+
+
+class TestCalendarFlags(unittest.TestCase):
+    def test_extras_disabled_by_default(self):
+        from src.config import load_config
+
+        cfg = load_config(Path(__file__).resolve().parent.parent / "config.example.yaml")
+        self.assertFalse(cfg.get_bool("calendar.image.enabled", True))
+        self.assertFalse(cfg.get_bool("calendar.post_assignment_lists", True))
+        self.assertFalse(cfg.get_bool("calendar.post_ics", True))
+        self.assertEqual(cfg.reminder_days_before(), [1])
+
+
 class TestReminders(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -609,7 +662,7 @@ class TestConfig(unittest.TestCase):
         self.assertIsInstance(aliases, dict)
         self.assertIn("TIS", aliases["Testing dan Implementasi Sistem"])
         self.assertIn("SPK", aliases["Sistem Penunjang Keputusan"])
-        self.assertEqual(cfg.reminder_days_before(), [1, 0])
+        self.assertEqual(cfg.reminder_days_before(), [1])  # #calendar = "besok ada tenggat"
         self.assertEqual(cfg.get_str("pipeline.course_fallback"), "Lainnya")
 
     def test_aliases_map_to_courses_not_playlist_name(self):

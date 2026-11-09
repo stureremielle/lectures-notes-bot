@@ -249,6 +249,8 @@ def post_note(ctx: Context, record: dict) -> bool:
 
 
 def post_assignments_for(ctx: Context, record: dict) -> None:
+    if not ctx.cfg.get_bool("calendar.post_assignment_lists", True):
+        return
     items = (record.get("note") or {}).get("assignments") or []
     if not items:
         return
@@ -263,6 +265,8 @@ def post_assignments_for(ctx: Context, record: dict) -> None:
 
 def post_calendar_snapshot(ctx: Context) -> None:
     """All dated assignments as an .ics attachment (same channel as reminders)."""
+    if not ctx.cfg.get_bool("calendar.post_ics", True):
+        return
     items = A.collect_from_videos(ctx.state.all_videos())
     dated = A.dated_items(items)
     if not dated:

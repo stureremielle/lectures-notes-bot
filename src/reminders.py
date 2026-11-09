@@ -115,21 +115,50 @@ def format_dry_run(candidates: list[tuple[dict, int]], diagnostics: dict) -> str
     return "\n".join(lines)
 
 
+def mention_of(cfg) -> str:
+    """The ping to prefix on a reminder: '@everyone', '@here', a role, or ''."""
+    raw = cfg.get_str("reminders.mention", "").strip()
+    if not raw or raw.lower() in {"none", "off", "false", "0"}:
+        return ""
+    if raw.lower() in {"everyone", "@everyone"}:
+        return "@everyone"
+    if raw.lower() in {"here", "@here"}:
+        return "@here"
+    # "role:12345" or a plain role name -> <@&id> only if it looks like an id.
+    if raw.lower().startswith("role:"):
+        role_id = raw.split(":", 1)[1].strip()
+        return f"<@&{role_id}>" if role_id.isdigit() else ""
+    return raw
+
+
+def allowed_mentions_for(mention: str) -> dict:
+    """Discord silently ignores mentions unless they are explicitly allowed."""
+    if not mention:
+        return {"parse": []}
+    if mention in {"@everyone", "@here"}:
+        return {"parse": [mention.lstrip("@")]}
+    if mention.startswith("<@&"):
+        return {"roles": [mention.removeprefix("<@&").rstrip(">")]}
+    return {"parse": []}
+
+
 def send(
     calendar_webhook,
     state,
     candidates: list[tuple[dict, int]],
     now: Optional[_dt.datetime] = None,
     force: bool = False,
+    mention: str = "",
 ) -> int:
     """Post reminders and mark them as reminded. Returns the number sent."""
     now = now or _dt.datetime.now(WITA)
     today = now.date()
+    allowed = allowed_mentions_for(mention)
     sent = 0
     for item, off in candidates:
         key = reminder_key(item, off)
-        text = A.render_reminder(item, off, today)
-        if calendar_webhook.send_text(text):
+        text = A.render_reminder(item, off, today, mention=mention)
+        if calendar_webhook.send_text(text, allowed_mentions=allowed):
             # --force only bypasses the "already sent" check; it still records.
             state.mark_reminded(key)
             sent += 1
@@ -159,11 +188,16 @@ def run_reminder_pass(
         items, state, now=now, days_before=days_before, send_time=send_time, force=force
     )
     result = {"candidates": len(candidates), "sent": 0, "diagnostics": diag}
+    mention = mention_of(cfg)
     if dry_run:
         print(format_dry_run(candidates, diag))
+        if mention:
+            print(f"\n(mention yang akan dipakai: {mention})")
         return result
     if not candidates:
         log.info("reminder pass: nothing due (undated=%d)", diag["undated"])
         return result
-    result["sent"] = send(calendar_webhook, state, candidates, now=now, force=force)
+    result["sent"] = send(
+        calendar_webhook, state, candidates, now=now, force=force, mention=mention
+    )
     return result
