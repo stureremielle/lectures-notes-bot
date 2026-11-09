@@ -3,6 +3,8 @@
 #
 #   ./scripts/update.sh            # git pull (fast-forward only) + rebuild
 #   ./scripts/update.sh --tag      # also tag the image with today's date
+#   ./scripts/update.sh --reset    # discard local edits to tracked files first
+#                                  # (config.yaml and data/ are never touched)
 #
 # Afterwards click "Update the stack" in Portainer (or run scripts/restart.sh).
 set -eu
@@ -13,16 +15,31 @@ need_docker
 need_git
 
 TAG_DATE=0
+RESET=0
 for arg in "$@"; do
   case "$arg" in
     --tag) TAG_DATE=1 ;;
-    --help) sed -n '2,9p' "$0"; exit 0 ;;
+    --reset) RESET=1 ;;
+    --help) sed -n '2,10p' "$0"; exit 0 ;;
     *) die "opsi tidak dikenal: $arg" ;;
   esac
 done
 
-# Make sure the state volume survives: it is a named volume, not a bind mount,
-# so rebuilding the image never touches it. We still show the summary first.
+# Tracked files (scripts/, src/, prompts/) belong to the repository: if one was
+# touched locally, `git pull --ff-only` refuses to run. config.yaml and data/
+# are gitignored, so this reset never touches them.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  warn "ada perubahan lokal pada file yang dilacak:"
+  git --no-pager diff --stat | sed 's/^/    /'
+  if [ "$RESET" = "1" ]; then
+    git checkout -- .
+    say "perubahan lokal dibuang (config.yaml dan data/ tidak tersentuh)"
+  else
+    die "jalankan '$HOST_DIR/scripts/update.sh --reset' untuk membuangnya, atau 'git checkout -- <file>' satu per satu"
+  fi
+fi
+
+# Show the state summary before rebuilding: the volume is untouched by updates.
 if container_running; then
   say "State sebelum update:"
   docker exec "$APP_NAME" python -c "from src.state import State; from src.config import load_config; print(State(load_config().state_path).load().summary())" \
@@ -51,6 +68,6 @@ if [ "$TAG_DATE" = "1" ]; then
 fi
 
 say "Selesai. Terapkan ke container yang berjalan:"
-printf '  sudo %s/scripts/restart.sh        # = docker compose up -d --force-recreate\n' "$HOST_DIR"
-printf '  atau di Portainer: stack -> "Update the stack" (hasilnya sama)\n'
+printf '  Portainer -> stack -> "Update the stack"   (cara paling aman)\n'
+printf '  atau: %s/scripts/restart.sh                 (docker restart, env utuh)\n' "$HOST_DIR"
 printf '  Config dibaca ulang setiap tick, jadi ubah config.yaml TIDAK butuh restart.\n'
