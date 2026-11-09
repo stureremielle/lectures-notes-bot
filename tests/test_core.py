@@ -1,0 +1,478 @@
+"""Fast, network-free tests: python -m unittest discover -s tests -v"""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src import assignments as A  # noqa: E402
+from src import calendar_image, notes, reminders, transcript  # noqa: E402
+from src.config import Config, load_config  # noqa: E402
+from src.discord_webhook import split_message  # noqa: E402
+from src.llm import LLMClient, extract_json  # noqa: E402
+from src.state import State  # noqa: E402
+from src.timeutil import WITA  # noqa: E402
+
+
+class TestSplit(unittest.TestCase):
+    def test_short(self):
+        self.assertEqual(split_message("halo"), ["halo"])
+
+    def test_limit_and_lines(self):
+        lines = [f"baris ke-{i} " + "x" * 60 for i in range(200)]
+        text = "\n".join(lines)
+        chunks = split_message(text)
+        self.assertGreater(len(chunks), 1)
+        for c in chunks:
+            self.assertLessEqual(len(c), 1900)
+        rejoined = "\n".join(chunks)
+        for line in lines:
+            self.assertIn(line, rejoined)
+
+    def test_fence_balance(self):
+        body = "```python\n" + "\n".join(f"print({i})" for i in range(600)) + "\n```"
+        text = "Sebelum\n\n" + body + "\n\nSesudah"
+        chunks = split_message(text)
+        self.assertGreater(len(chunks), 1)
+        for c in chunks:
+            self.assertLessEqual(len(c), 1900)
+            self.assertEqual(c.count("```") % 2, 0, f"unbalanced fence:\n{c[-120:]}")
+        self.assertTrue(any("```python" in c for c in chunks[1:]))
+
+    def test_long_single_line(self):
+        text = "a" * 5000
+        chunks = split_message(text)
+        self.assertTrue(all(len(c) <= 1900 for c in chunks))
+
+
+class TestJson(unittest.TestCase):
+    def test_fenced(self):
+        self.assertEqual(extract_json('```json\n{"a": 1}\n```'), {"a": 1})
+
+    def test_surrounded(self):
+        text = 'Berikut hasilnya:\n{"a": {"b": [1,2]}, "c": "x}y"}\nSemoga membantu.'
+        self.assertEqual(extract_json(text), {"a": {"b": [1, 2]}, "c": "x}y"})
+
+    def test_garbage(self):
+        self.assertIsNone(extract_json("tidak ada json di sini"))
+
+    def test_trailing_comma(self):
+        self.assertEqual(extract_json('{"a": 1,}'), {"a": 1})
+
+
+class TestTranscript(unittest.TestCase):
+    VTT = """WEBVTT
+Kind: captions
+Language: en
+
+00:00:01.000 --> 00:00:03.000
+so today we
+
+00:00:03.000 --> 00:00:05.500
+we will talk about the heap
+
+00:00:05.500 --> 00:00:07.000
+about the heap and hash table
+"""
+
+    def test_vtt(self):
+        cues = transcript.parse_vtt(self.VTT)
+        self.assertEqual(len(cues), 3)
+        self.assertAlmostEqual(cues[0][0], 1.0)
+        deduped = transcript._dedupe_cues(cues)
+        joined = transcript.merge_paragraphs(deduped)
+        self.assertIn("[0:00:01]", joined)
+        self.assertNotIn("we we will", joined)
+        self.assertEqual(joined.count("about the heap"), 1)
+
+    def test_json3(self):
+        payload = {
+            "events": [
+                {"tStartMs": 1500, "segs": [{"utf8": "halo "}, {"utf8": "semua"}]},
+                {"tStartMs": 3000, "segs": [{"utf8": "halo semua"}, {"utf8": " kita mulai"}]},
+                {"tStartMs": 9000, "segs": [{"utf8": "\n"}]},
+            ]
+        }
+        cues = transcript.parse_json3(json.dumps(payload))
+        self.assertEqual(cues[0], (1.5, "halo semua"))
+        deduped = transcript._dedupe_cues(cues)
+        self.assertEqual(len(deduped), 2)
+
+    def test_ts(self):
+        self.assertEqual(transcript.format_ts(3725), "1:02:05")
+
+    def test_rolling_vtt(self):
+        vtt = (
+            "WEBVTT\nKind: captions\n\n"
+            "00:00:01.000 --> 00:00:03.000 align:start position:0%\nso today we\n\n"
+            "00:00:03.000 --> 00:00:03.010 align:start position:0%\nso today we\nwe will talk about the heap\n\n"
+            "00:00:03.010 --> 00:00:05.500 align:start position:0%\nwe will talk about the heap\nand hash table\n\n"
+            "00:00:05.500 --> 00:00:07.000 align:start position:0%\nand hash table\nyeah\n"
+        )
+        cues = transcript.parse_vtt(vtt)
+        self.assertEqual([c[1] for c in cues], ["so today we", "we will talk about the heap", "and hash table", "yeah"])
+        merged = transcript.merge_paragraphs(transcript._dedupe_cues(cues))
+        self.assertEqual(merged, "[0:00:01] so today we will talk about the heap and hash table yeah")
+
+
+class TestNotes(unittest.TestCase):
+    RAW = {
+        "title": "Heap dan Hash Table",
+        "language": "en",
+        "summary": "Kuliah membahas heap dan hash table.",
+        "key_concepts": [
+            {"term": "heap", "explanation": "struktur pohon dengan aturan urutan."},
+            "hash table",
+        ],
+        "tags": ["data structure", "heap"],
+        "assignments": [
+            {
+                "text": "Buat implementasi hash table",
+                "type": "tugas",
+                "due_date": "2026-11-20",
+                "due_text": None,
+                "confidence": "high",
+                "timestamp": "0:10:00",
+            },
+            {
+                "text": "Baca bab berikutnya",
+                "type": "membaca",
+                "due_date": "minggu depan",
+                "due_text": "minggu depan",
+                "confidence": "low",
+            },
+        ]
+        + [{"text": f"Tugas tambahan {i}", "type": "tugas"} for i in range(15)],
+    }
+
+    def test_normalise(self):
+        video = {"id": "abc", "title": "Video", "playlist_title": "Struktur Data"}
+        note = notes.normalise(self.RAW, video)
+        self.assertEqual(note["language"], "id")
+        self.assertLessEqual(len(note["assignments"]), notes.MAX_ASSIGNMENTS)
+        first = note["assignments"][0]
+        self.assertEqual(first["due_date"], "2026-11-20")
+        self.assertEqual(first["type"], "tugas")
+        # "minggu depan" must never become a date.
+        self.assertIsNone(note["assignments"][1]["due_date"])
+        self.assertEqual(note["assignments"][1]["due_text"], "minggu depan")
+
+    def test_two_headers(self):
+        note = notes.normalise(self.RAW, {"id": "x", "playlist_title": "C"})
+        body = notes.render_notes_body(note)
+        self.assertEqual(notes.headers_of(note), ["Rangkuman", "Tugas"])
+        self.assertIn("diucapkan secara", body)
+        self.assertIn("slide", body)
+        self.assertEqual(body.count("## "), 2)
+
+    def test_empty_assignments(self):
+        raw = dict(self.RAW, assignments=[])
+        note = notes.normalise(raw, {"id": "x"})
+        body = notes.render_notes_body(note)
+        self.assertIn("Tidak ada tugas", body)
+        self.assertEqual(notes.headers_of(note), ["Rangkuman", "Tugas"])
+
+    def test_bad_payload(self):
+        self.assertIsNone(notes.normalise(None, {"id": "x"}))
+        self.assertIsNone(notes.normalise({"foo": "bar"}, {"id": "x"}))
+
+    def test_condense_split(self):
+        text = "\n\n".join("kalimat. " * 200 for _ in range(10))
+        chunks = notes.split_for_condense(text, 5000)
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(len(c) <= 5000 for c in chunks))
+
+
+def make_item(text, due, course="Sistem Multimedia", atype="tugas", conf="high", key=None):
+    return {
+        "text": text,
+        "due_date": due,
+        "due_text": None,
+        "type": atype,
+        "course": course,
+        "confidence": conf,
+        "key": key or text.replace(" ", "_"),
+        "video_url": "https://youtu.be/x",
+    }
+
+
+class TestAssignments(unittest.TestCase):
+    def test_order(self):
+        items = [
+            make_item("b", "2026-11-20"),
+            make_item("a", None),
+            make_item("c", "2026-11-10"),
+        ]
+        ordered = A.sort_assignments(items)
+        self.assertEqual([i["text"] for i in ordered], ["c", "b", "a"])
+
+    def test_ics(self):
+        items = [make_item("Laporan akhir, bab 1; bab 2", "2026-11-20"), make_item("x", None)]
+        ics = A.build_ics(items, now=dt.datetime(2026, 11, 9, 10, 0, tzinfo=WITA))
+        self.assertIn("BEGIN:VCALENDAR", ics)
+        self.assertEqual(ics.count("BEGIN:VEVENT"), 1)
+        self.assertIn("DTSTART;VALUE=DATE:20261120", ics)
+        self.assertIn("DTEND;VALUE=DATE:20261121", ics)
+        self.assertIn("Laporan akhir\\, bab 1\\; bab 2", ics)
+        self.assertNotIn("\n", ics.replace("\r\n", ""))
+        for line in ics.split("\r\n"):
+            self.assertLessEqual(len(line.encode("utf-8")), 75)
+
+    def test_render_list_indonesian(self):
+        text = A.render_list([make_item("Tugas A", "2026-11-20")], today=dt.date(2026, 11, 9))
+        self.assertIn("Jumat, 20 November 2026", text)
+        self.assertIn("11 hari lagi", text)
+
+
+class TestTrackPreference(unittest.TestCase):
+    def test_manual_beats_automatic(self):
+        info = {
+            "subtitles": {"de": [{"ext": "vtt", "url": "u-de"}]},
+            "automatic_captions": {"de": [{"ext": "json3", "url": "u-de-auto"}]},
+        }
+        track = transcript._pick_track(info)
+        self.assertEqual(track["kind"], "subtitles")
+        self.assertEqual(track["url"], "u-de")
+
+    def test_native_beats_translated(self):
+        info = {
+            "subtitles": {},
+            "automatic_captions": {
+                "es": [{"ext": "json3", "url": "u-es"}],
+                "en": [{"ext": "json3", "url": "u-en?tlang=es"}],
+            },
+        }
+        self.assertEqual(transcript._pick_track(info)["url"], "u-es")
+
+    def test_prefers_english_when_native(self):
+        info = {
+            "subtitles": {},
+            "automatic_captions": {
+                "fr": [{"ext": "json3", "url": "u-fr"}],
+                "en": [{"ext": "json3", "url": "u-en"}],
+                "ja": [{"ext": "json3", "url": "u-ja"}],
+            },
+        }
+        self.assertEqual(transcript._pick_track(info)["lang"], "en")
+
+    def test_no_captions(self):
+        self.assertIsNone(transcript._pick_track({"subtitles": {}, "automatic_captions": {}}))
+
+
+class TestLLMClient(unittest.TestCase):
+    def test_retry_then_success(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        state = {"n": 0}
+
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                state["n"] += 1
+                if state["n"] == 1:
+                    self.send_response(429)
+                    self.send_header("Retry-After", "0")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                body = json.dumps(
+                    {"choices": [{"message": {"content": "```json\n{\"summary\": \"ok\"}\n```"}}]}
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        srv = HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            client = LLMClient(
+                base_url=f"http://127.0.0.1:{srv.server_address[1]}/v1",
+                api_key="k",
+                model="m",
+                max_retries=2,
+            )
+            client._sleep = lambda *a, **k: None
+            data = client.complete_json("sys", "user")
+            self.assertEqual(data, {"summary": "ok"})
+            self.assertEqual(state["n"], 2)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_malformed_never_raises(self):
+        from src.llm import LLMClient as C
+
+        c = C(base_url="http://127.0.0.1:1/v1", api_key="k", model="m", max_retries=0)
+        c.chat = lambda *a, **k: "maaf, saya tidak bisa"  # type: ignore[assignment]
+        self.assertIsNone(c.complete_json("sys", "user"))
+
+
+class TestReminders(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.state = State(Path(self.tmp.name) / "state.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_offsets_and_dedupe(self):
+        now = dt.datetime(2026, 11, 9, 9, 0, tzinfo=WITA)
+        items = [
+            make_item("besok", "2026-11-10"),
+            make_item("hari ini", "2026-11-09"),
+            make_item("jauh", "2026-11-30"),
+            make_item("tanpa", None),
+        ]
+        cands, diag = reminders.pending(items, self.state, now=now, days_before=[1, 0], send_time=dt.time(8, 0))
+        self.assertEqual(len(cands), 2)
+        self.assertEqual(diag["undated"], 1)
+        key = reminders.reminder_key(cands[0][0], cands[0][1])
+        self.state.mark_reminded(key)
+        cands2, diag2 = reminders.pending(items, self.state, now=now, days_before=[1, 0], send_time=dt.time(8, 0))
+        self.assertEqual(len(cands2), 1)
+        self.assertEqual(diag2["already_sent"], 1)
+
+    def test_before_send_time(self):
+        now = dt.datetime(2026, 11, 9, 6, 0, tzinfo=WITA)
+        cands, diag = reminders.pending(
+            [make_item("hari ini", "2026-11-09")], self.state, now=now, days_before=[1, 0], send_time=dt.time(8, 0)
+        )
+        self.assertEqual(cands, [])
+        self.assertTrue(diag["before_send_time"])
+
+
+class TestState(unittest.TestCase):
+    def test_roundtrip_and_corrupt(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "state.json"
+            st = State(path).load()
+            st.stamp_baseline("https://www.youtube.com/playlist?list=X")
+            st.mark_skipped(["a", "b"])
+            st.add_video("v1", {"id": "v1", "note": {}})
+            st.mark_reminded("k@T1")
+            st.set_calendar_week("2026-W45")
+            st.save()
+            st2 = State(path).load()
+            self.assertTrue(st2.has_baseline("https://www.youtube.com/playlist?list=X"))
+            self.assertEqual(st2.data["skipped"], ["a", "b"])
+            self.assertTrue(st2.has_video("v1"))
+            self.assertTrue(st2.is_reminded("k@T1"))
+            self.assertEqual(st2.calendar_week(), "2026-W45")
+            path.write_text("{not json", encoding="utf-8")
+            st3 = State(path).load()
+            self.assertEqual(st3.data["videos"], {})
+            self.assertEqual(list(Path(d).glob("state.json.corrupt-*")), list(Path(d).glob("state.json.corrupt-*")))
+            self.assertTrue(list(Path(d).glob("state.json.corrupt-*")))
+
+
+class TestConfig(unittest.TestCase):
+    def test_env_expansion_and_dotted(self):
+        os.environ["TEST_BOT_KEY"] = "secret"
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "c.yaml"
+            p.write_text(
+                "llm:\n  api_key: ${TEST_BOT_KEY}\n  model: ${NOPE_MISSING:-gpt-x}\n"
+                "watch:\n  run_at_local: ['19:00', '07:00']\n",
+                encoding="utf-8",
+            )
+            cfg = load_config(p)
+            self.assertEqual(cfg.get_str("llm.api_key"), "secret")
+            self.assertEqual(cfg.get_str("llm.model"), "gpt-x")
+            self.assertEqual(cfg.watch_times(), ["07:00", "19:00"])
+            self.assertTrue(isinstance(cfg.section("llm"), Config) or hasattr(cfg.section("llm"), "get"))
+
+    def test_example_loads(self):
+        cfg = load_config(Path(__file__).resolve().parent.parent / "config.example.yaml")
+        self.assertEqual(len(cfg.playlists()), 7)
+        names = [p["name"] for p in cfg.playlists()]
+        self.assertIn("Sistem Terdistribusi", names)
+        self.assertEqual(cfg.reminder_days_before(), [1, 0])
+
+    def test_send_time_warning(self):
+        cfg = Config({"reminders": {"send_time_local": "20:00"}, "watch": {"run_at_local": "19:00"},
+                      "llm": {"api_key": "x"}, "discord": {"notes_webhook": "https://x", "calendar_webhook": "https://y"}})
+        warns = cfg.validate_for_run()
+        self.assertTrue(any("send_time_local" in w for w in warns))
+
+
+class TestCalendar(unittest.TestCase):
+    def test_grid_monday_first(self):
+        weeks = calendar_image.month_grid(2026, 11)
+        self.assertEqual(weeks[0][0], None)  # 1 Nov 2026 is a Sunday
+        self.assertEqual(weeks[0][6], 1)
+        self.assertEqual(len(weeks), 6)
+
+    def test_render_png(self):
+        items = [make_item(f"Tugas {i}", f"2026-11-{10 + i:02d}") for i in range(4)]
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "cal.png"
+            path = calendar_image.render_month(items, 2026, 11, today=dt.date(2026, 11, 9), out_path=out)
+            self.assertTrue(path.exists())
+            with open(path, "rb") as fh:
+                head = fh.read(8)
+            self.assertEqual(head, b"\x89PNG\r\n\x1a\n")
+            from PIL import Image
+
+            with Image.open(path) as img:
+                self.assertEqual(img.size, (900, 1020))
+
+
+class TestPrompts(unittest.TestCase):
+    def test_system_prompt_constraints(self):
+        from src import prompts
+
+        system = prompts.load_prompt("notes_system")
+        self.assertIn("tidak jelas di transkrip", system)
+        self.assertIn("JANGAN PERNAH mengarang isi visual", system)
+        self.assertIn("minggu depan", system)  # null date rule
+        self.assertIn("10", system)  # cap
+
+    def test_render(self):
+        from src import prompts
+
+        user = prompts.render(
+            "notes_user",
+            course_name="Sistem Multimedia",
+            video_title="Pertemuan 1",
+            video_date="Senin, 1 September 2026",
+            duration="25 menit",
+            caption_kind="caption otomatis",
+            caption_lang="id",
+            transcript="[0:00:01] halo semua",
+        )
+        self.assertIn("Sistem Multimedia", user)
+        self.assertIn("[0:00:01] halo semua", user)
+        self.assertNotIn("{transcript}", user)
+        cond = prompts.render("condense", chunk_index=1, chunk_total=2, chunk="teks")
+        self.assertIn("bagian 1 dari 2", cond.lower())
+
+
+class TestWatchSchedule(unittest.TestCase):
+    def test_next_tick_is_after_last_end(self):
+        from src.main import next_tick
+
+        tz = WITA
+        last_end = dt.datetime(2026, 11, 9, 19, 0, 7, tzinfo=tz)  # run ended 7s after the tick
+        nxt = next_tick(["19:00"], last_end, tz)
+        self.assertEqual(nxt, dt.datetime(2026, 11, 10, 19, 0, tzinfo=tz))
+        nxt2 = next_tick(["07:00", "19:00"], last_end, tz)
+        self.assertEqual(nxt2, dt.datetime(2026, 11, 10, 7, 0, tzinfo=tz))
+        # A run that ends early still waits for the next slot.
+        nxt3 = next_tick(["07:00", "19:00"], dt.datetime(2026, 11, 9, 7, 3, tzinfo=tz), tz)
+        self.assertEqual(nxt3, dt.datetime(2026, 11, 9, 19, 0, tzinfo=tz))
+
+
+if __name__ == "__main__":
+    unittest.main()

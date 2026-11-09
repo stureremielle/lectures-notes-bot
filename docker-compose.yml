@@ -1,0 +1,25 @@
+# Local / build-machine compose file.
+# The Portainer deployment is docker-compose.portainer.yml — use that one on the
+# TV box, where the image is built separately (`docker build -t lecture-notes-bot:latest .`).
+services:
+  lecture-notes-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lecture-notes-bot:latest
+    container_name: lecture-notes-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - lecture-notes-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    command: ["python", "-m", "src.main", "watch", "--all"]
+
+volumes:
+  lecture-notes-data:

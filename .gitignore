@@ -1,0 +1,27 @@
+# --- secrets ---------------------------------------------------------------
+.env
+config.yaml
+*.cookies.txt
+cookies.txt
+
+# --- runtime data ----------------------------------------------------------
+data/
+*.log
+
+# --- python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- misc ------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.png
+!docs/*.png
+.idea/
+.vscode/

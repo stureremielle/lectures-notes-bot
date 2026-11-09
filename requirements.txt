@@ -1,0 +1,5 @@
+requests>=2.31,<3
+PyYAML>=6.0,<7
+Pillow>=10.0,<12
+yt-dlp>=2024.1.1
+tzdata

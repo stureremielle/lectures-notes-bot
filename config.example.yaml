@@ -1,0 +1,108 @@
+# =============================================================================
+# lectures-notes-bot — configuration
+# Copy to config.yaml and fill in the URLs + secrets (or use .env / the
+# stack's `environment:` block; ${ENV_VAR} placeholders are expanded).
+# =============================================================================
+
+llm:
+  # Any OpenAI-compatible /chat/completions endpoint.
+  base_url: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+  api_key: "${OPENAI_API_KEY}"
+  model: "${OPENAI_MODEL:-gpt-4o-mini}"
+  temperature: 0.2
+  max_tokens: 4096
+  timeout: 180
+  max_retries: 4
+
+discord:
+  # Two webhooks, two channels.
+  # #notes    -> note embeds + note messages
+  # #calendar -> assignment lists, .ics attachment, weekly PNG, reminders
+  notes_webhook: "${DISCORD_NOTES_WEBHOOK}"
+  calendar_webhook: "${DISCORD_CALENDAR_WEBHOOK}"
+  username: "Catatan Kuliah"
+
+notes:
+  # Forced, never auto-detected.
+  language: "id"
+  # Transcripts longer than this are map-reduced (condense per chunk) before
+  # the final call.
+  max_transcript_chars: 60000
+  condense: true
+  condense_chunk_chars: 18000
+  hard_cap_chars: 120000
+
+reminders:
+  # ALL date math uses this zone. WITA — not WIB.
+  timezone: "Asia/Makassar"
+
+  # Offsets (in days) before the due date that get a reminder. 1 = T-1, 0 = T-0.
+  days_before: [1, 0]
+
+  # Earliest time of day the reminder pass may send (WITA).
+  # IMPORTANT: this MUST be earlier than the first entry of
+  # `watch.run_at_local`, otherwise the tick that should send the reminder
+  # runs after the window opened and nothing fires on time. With the default
+  # 19:00 tick, keep this at 08:00.
+  send_time_local: "08:00"
+
+watch:
+  # "HH:MM" (string) or a list. Interpreted in reminders.timezone.
+  #   one tick  : "19:00"          -> T-0 fires ~5h before a midnight deadline
+  #   two ticks : ["07:00", "19:00"] -> much more notice at near-zero cost
+  #               (the second tick only re-scans the playlist; only new
+  #               uploads reach the LLM)
+  run_at_local: "19:00"
+
+  # First encounter with a playlist: enumerate, stamp the baseline, mark every
+  # current video as skipped. Zero LLM calls. Set true to process those videos
+  # once instead.
+  backfill_on_first_run: false
+
+calendar:
+  image:
+    enabled: true
+    # 900x1020 month grid, posted once per ISO week on this weekday.
+    weekday: "monday"
+    # If today is within this many days of the end of the month, draw next month.
+    lead_days: 7
+    output_dir: "data/calendar"
+
+pipeline:
+  # --dry-run never writes state.json; this flag exists only for debugging.
+  save_state_on_dry_run: false
+
+paths:
+  data_dir: "data"
+  state_file: "data/state.json"
+  cache_dir: "data/cache"
+
+logging:
+  level: "INFO"
+
+# -----------------------------------------------------------------------------
+# Courses. Fill in the URL of the playlist for each. Room numbers and class
+# hours are intentionally not encoded anywhere.
+# -----------------------------------------------------------------------------
+playlists:
+  - name: "Sistem Penunjang Keputusan"
+    url: ""
+    enabled: true
+  - name: "Sistem Multimedia"
+    url: ""
+    enabled: true
+  - name: "Pengelolaan Proyek Sistem Informasi"
+    url: ""
+    enabled: true
+  - name: "Testing dan Implementasi Sistem"
+    url: ""
+    enabled: true
+  - name: "Business Intelligence"
+    url: ""
+    enabled: true
+  - name: "Sistem Terdistribusi"
+    url: ""
+    enabled: true
+  - name: "Analisis Kinerja Sistem"
+    url: ""
+    enabled: true

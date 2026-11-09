@@ -1,0 +1,38 @@
+# Portainer stack (paste into the Portainer web editor: Stacks -> Add stack -> Web editor).
+#
+# Build the image on the box first (or on a build machine and `docker save | ssh docker load`):
+#     cd /opt/lecture-notes-bot && docker build -t lecture-notes-bot:latest .
+#
+# Deliberately:
+#   * no `build:` — Portainer resolves relative build contexts under
+#     /data/compose/<id>/, not where your sources live;
+#   * no `env_file:` — put the secrets in Portainer's environment variables
+#     (they are interpolated below);
+#   * config.yaml is bind-mounted from an absolute host path;
+#   * /app/data lives on a named volume so state survives recreation
+#     (baselines, skipped, videos, reminded, calendar_last_week).
+services:
+  lecture-notes-bot:
+    image: lecture-notes-bot:latest
+    container_name: lecture-notes-bot
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Makassar
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - DISCORD_NOTES_WEBHOOK=${DISCORD_NOTES_WEBHOOK}
+      - DISCORD_CALENDAR_WEBHOOK=${DISCORD_CALENDAR_WEBHOOK}
+    volumes:
+      - /opt/lecture-notes-bot/config.yaml:/app/config.yaml:ro
+      - lecture-notes-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    command: ["python", "-m", "src.main", "watch", "--all"]
+
+volumes:
+  lecture-notes-data:
+    name: lecture-notes-data
