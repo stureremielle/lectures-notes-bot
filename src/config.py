@@ -171,6 +171,38 @@ def _set_dotted(target: dict, dotted: str, value: Any) -> None:
     node[parts[-1]] = value
 
 
+def _alias_list(raw) -> list[str]:
+    if isinstance(raw, str):
+        return [a.strip() for a in raw.split(",") if a.strip()]
+    if isinstance(raw, (list, tuple)):
+        return [str(a).strip() for a in raw if str(a).strip()]
+    return []
+
+
+def _normalise_aliases(raw, default_course: str) -> dict[str, list[str]]:
+    """Normalise ``course_aliases`` into ``{course_name: [alias, ...]}``.
+
+    Accepted forms::
+
+        course_aliases: "SPK, SM"                  # aliases of this playlist's label
+        course_aliases: ["SPK", "SM"]
+        course_aliases:                            # one playlist, several courses
+          Sistem Penunjang Keputusan: [SPK]
+          Sistem Multimedia: [SM]
+    """
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        out: dict[str, list[str]] = {}
+        for course, aliases in raw.items():
+            items = _alias_list(aliases)
+            if items:
+                out[str(course).strip()] = items
+        return out
+    items = _alias_list(raw)
+    return {default_course: items} if items else {}
+
+
 class Config(Section):
     def __init__(self, data: Optional[dict] = None, path: Optional[Path] = None):
         super().__init__(data or {}, "")
@@ -242,22 +274,14 @@ class Config(Section):
             url = str(entry.get("url") or "").strip()
             if not name and not url:
                 continue
-            aliases = entry.get("course_aliases")
-            if isinstance(aliases, dict):
-                # name: [aliases]
-                pairs = [
-                    f"{course}: {', '.join(a if isinstance(a, str) else str(a) for a in (lst or []))}"
-                    for course, lst in aliases.items()
-                ]
-                aliases = "; ".join(pairs)
-            elif isinstance(aliases, list):
-                aliases = ", ".join(str(a) for a in aliases)
             result.append(
                 {
                     "name": name or url,
                     "url": url,
                     "max_videos": entry.get("max_videos"),
-                    "course_aliases": str(aliases or ""),
+                    "course_aliases": _normalise_aliases(
+                        entry.get("course_aliases"), name or url
+                    ),
                     "enabled": bool(entry.get("enabled", True)),
                 }
             )

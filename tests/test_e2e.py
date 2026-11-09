@@ -158,7 +158,8 @@ class EndToEnd(unittest.TestCase):
                 playlists:
                   - name: "PTA 2026/2027"
                     url: "{PLAYLIST_URL}"
-                    course_aliases: "PEM"
+                    course_aliases:
+                      Peminatan Tes: ["PEM"]
                   - name: "Sistem Terdistribusi"
                     url: "https://www.youtube.com/playlist?list=PLTEST999"
                 """
@@ -281,7 +282,7 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(len(record["note"]["assignments"]), 1)
         self.assertIsNone(record["note"]["assignments"][0]["due_date"])
         records = list(data["videos"].values())
-        self.assertEqual(records[0]["course"], "PTA 2026/2027")  # PEM alias -> playlist label
+        self.assertEqual(records[0]["course"], "Peminatan Tes")  # alias -> course, not playlist label
         self.assertEqual(records[0]["title"], "PEM M1 2026 09 28 - Heap")
         # A plain run without --force must never touch the leftover history: no
         # LLM call, no new note, state unchanged.

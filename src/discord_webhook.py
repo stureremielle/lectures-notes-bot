@@ -252,15 +252,21 @@ class DiscordWebhook:
         return self._post(payload, files=file_list or None)
 
     def send_text_and_embeds(self, content: str, embeds: list[dict]) -> bool:
-        """Post text chunks; attach embeds to the first chunk."""
+        """Post text chunks; the embeds ride on the LAST chunk.
+
+        Discord renders an embed underneath its message, so attaching it to the
+        first chunk splits a long note in two around the card. Putting it on the
+        last chunk keeps the note readable top-to-bottom.
+        """
         chunks = split_message(content)
         if not chunks:
             return self.send_embed(embeds[0]) if embeds else True
         ok = True
+        last = len(chunks) - 1
         for i, chunk in enumerate(chunks):
             payload = self._base_payload()
             payload["content"] = chunk
-            if i == 0 and embeds:
+            if i == last and embeds:
                 payload["embeds"] = embeds[:10]
             payload["allowed_mentions"] = {"parse": []}
             ok = self._post(payload) and ok

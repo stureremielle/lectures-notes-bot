@@ -537,9 +537,40 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(len(playlists), 1)
         self.assertEqual(playlists[0]["name"], "PTA 2026/2027")
         self.assertIn("list=", playlists[0]["url"])
-        self.assertIn("TIS", playlists[0]["course_aliases"])
+        aliases = playlists[0]["course_aliases"]
+        self.assertIsInstance(aliases, dict)
+        self.assertIn("TIS", aliases["Testing dan Implementasi Sistem"])
+        self.assertIn("SPK", aliases["Sistem Penunjang Keputusan"])
         self.assertEqual(cfg.reminder_days_before(), [1, 0])
         self.assertEqual(cfg.get_str("pipeline.course_fallback"), "Lainnya")
+
+    def test_aliases_map_to_courses_not_playlist_name(self):
+        from src.courses import AliasMap, resolve_course
+
+        cfg = Config(
+            {
+                "playlists": [
+                    {
+                        "name": "PTA 2026/2027",
+                        "url": "u",
+                        "course_aliases": {
+                            "Sistem Penunjang Keputusan": ["SPK"],
+                            "Testing dan Implementasi Sistem": ["TIS", "TDIS"],
+                        },
+                    }
+                ]
+            }
+        )
+        am = AliasMap.from_config(cfg)
+        names = [p["name"] for p in cfg.playlists()]
+        self.assertEqual(
+            resolve_course({"title": "SPK M1 2026 09 28"}, am, names, "Lainnya"),
+            "Sistem Penunjang Keputusan",
+        )
+        self.assertEqual(
+            resolve_course({"title": "TDIS M1 2026 09 30"}, am, names, "Lainnya"),
+            "Testing dan Implementasi Sistem",
+        )
 
     def test_send_time_warning(self):
         cfg = Config({"reminders": {"send_time_local": "20:00"}, "watch": {"run_at_local": "19:00"},

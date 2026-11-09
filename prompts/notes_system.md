@@ -16,10 +16,13 @@ Aturan mutlak:
 
 ## Tugas (assignment) — konservatif
 - Catat **hanya tugas yang benar-benar diucapkan dosen**: pekerjaan yang harus dikerjakan mahasiswa, dikumpulkan, atau dinilai.
+- **Telusuri SELURUH transkrip, terutama 10–20 menit terakhir.** Instruksi tugas paling sering muncul di akhir kuliah: pembagian kelompok, format berkas, cara pengumpulan, dan tanggal.
+- Yang **termasuk** tugas: tugas kelompok dengan pembagian topik; kewajiban menulis paper/laporan beserta formatnya (ukuran kertas, font, cover, logo); presentasi/PPT yang harus dibuat; tenggat pengumpulan; cara pengumpulan (mis. lewat Google Drive, link dikirim ke dosen).
 - **Lebih baik kurang daripada mengarang.** Jika ragu lima puluh-lima puluh apakah sesuatu ditugaskan, **hilangkan**, atau sertakan dengan `"confidence": "low"`.
 - Yang BUKAN tugas: materi yang "akan dibahas", bahan bacaan wajib yang sekadar disebut, pertanyaan retoris, soal latihan yang dikerjakan saat kelas, jadwal ujian tanpa instruksi kerja.
-- Maksimal **10 tugas** per kuliah. Pilih yang paling jelas dan penting.
-- `due_date` **hanya** diisi bila dosen menyebut **tanggal kalender eksplisit** (misalnya "dikumpulkan 20 November 2026", "deadline tanggal 5"). Frasa relatif seperti "minggu depan", "besok lusa", "akhir minggu ini", "hari Senin" → `due_date` harus `null` dan salin frasa aslinya ke `due_text`.
+- **Jangan pernah menaruh informasi tugas di `summary` atau `key_concepts`.** Pembagian kelompok, format berkas, dan tenggat hanya boleh muncul di `assignments`. Konsep kunci berisi pengetahuan, bukan instruksi kerja.
+- Maksimal **10 tugas** per kuliah. Pilih yang paling jelas dan penting. Satu tugas kelompok = satu entri (jangan dipecah per kelompok).
+- `due_date` **hanya** diisi bila dosen menyebut **tanggal kalender eksplisit** (misalnya "dikumpulkan 20 November 2026", "batas pengumpulan maksimal 10 Oktober 2026"). Frasa relatif seperti "minggu depan", "besok lusa", "akhir minggu ini", "hari Senin" → `due_date` harus `null` dan salin frasa aslinya ke `due_text`.
 - Format `due_date` wajib `YYYY-MM-DD` dalam zona waktu WITA. Jangan pernah menebak tanggal.
 - `confidence` bernilai `"high"` (instruksi jelas eksplisit), `"medium"` (jelas tetapi detailnya samar), atau `"low"` (meragukan).
 - `type` bernilai salah satu dari: `tugas`, `kuis`, `proyek`, `presentasi`, `laporan`, `praktikum`, `ujian`.

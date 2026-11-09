@@ -65,10 +65,25 @@ class AliasMap:
 
     @classmethod
     def from_config(cls, cfg) -> "AliasMap":
+        """Alias -> canonical course, from ``playlists[].course_aliases``.
+
+        A single playlist can hold several courses, so aliases may map to a
+        course name that is *not* the playlist label::
+
+            course_aliases:
+              Sistem Penunjang Keputusan: [SPK]
+              Sistem Multimedia: [SM]
+        """
         entries: list[tuple[str, str]] = []
         for pl in cfg.playlists():
-            for alias in parse_aliases(str(pl.get("course_aliases") or "")):
-                entries.append((alias, pl["name"]))
+            aliases = pl.get("course_aliases") or {}
+            if isinstance(aliases, dict):
+                for course, items in aliases.items():
+                    for alias in items:
+                        entries.append((str(alias), str(course)))
+            else:  # defensive: a plain string means "aliases of the label"
+                for alias in parse_aliases(str(aliases)):
+                    entries.append((alias, pl["name"]))
         return cls(entries)
 
 

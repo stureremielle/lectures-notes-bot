@@ -112,5 +112,14 @@ playlists:
   - name: "PTA 2026/2027"
     url: "https://www.youtube.com/playlist?list=PLPeIrnQX78dU"
     enabled: true
-    # Short codes used in the video titles, comma separated.
-    course_aliases: "SPK, SM, PPSI, TIS, TDIS, BI, ST, AKS"
+    # Short codes used in the video titles -> the real course name. With one
+    # playlist holding several courses, map each alias to its course
+    # (the playlist `name` is only the playlist label).
+    course_aliases:
+      Sistem Penunjang Keputusan: ["SPK"]
+      Sistem Multimedia: ["SM"]
+      Pengelolaan Proyek Sistem Informasi: ["PPSI"]
+      Testing dan Implementasi Sistem: ["TIS", "TDIS"]
+      Business Intelligence: ["BI"]
+      Sistem Terdistribusi: ["ST"]
+      Analisis Kinerja Sistem: ["AKS"]
