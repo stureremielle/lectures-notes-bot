@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from pathlib import Path
 from typing import Any, Optional
 
 from . import prompts
@@ -280,24 +281,91 @@ def normalise_assignment(item: Any, course: str, video: dict) -> Optional[dict]:
     }
 
 
+SUMMARY_KEYS = ("summary", "ringkasan", "rangkuman", "kesimpulan", "intisari")
+CONCEPT_KEYS = (
+    "key_concepts",
+    "keyConcepts",
+    "konsep_kunci",
+    "konsep",
+    "poin_kunci",
+    "key_points",
+    "poin",
+)
+TAG_KEYS = ("tags", "tag", "kategori", "topik")
+TITLE_KEYS = ("title", "judul", "topik", "topic")
+ASSIGNMENT_KEYS = ("assignments", "tugas", "daftar_tugas", "assignment", "penugasan")
+WRAPPER_KEYS = ("notes", "note", "catatan", "result", "hasil", "data", "output", "response")
+
+
+def _pick(raw: dict, keys: tuple) -> Any:
+    """First present, non-empty value among ``keys`` (case-insensitive)."""
+    lowered = {str(k).lower(): v for k, v in raw.items()}
+    for key in keys:
+        if key in raw and raw[key] not in (None, "", [], {}):
+            return raw[key]
+    for key in keys:
+        value = lowered.get(key.lower())
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _unwrap(raw: dict, depth: int = 0) -> dict:
+    """Peel a single wrapper object such as {"catatan": {...}}."""
+    if depth > 3:
+        return raw
+    for key in WRAPPER_KEYS:
+        inner = raw.get(key)
+        if isinstance(inner, dict):
+            return _unwrap(inner, depth + 1)
+    # A lone key holding the payload is a wrapper too.
+    if len(raw) == 1:
+        only = next(iter(raw.values()))
+        if isinstance(only, dict):
+            return _unwrap(only, depth + 1)
+    return raw
+
+
+def dump_unusable(cache_dir, video_id: str, raw: Any) -> str:
+    """Store a rejected model answer so it can be inspected without paying again."""
+    try:
+        target = Path(cache_dir) / "llm"
+        target.mkdir(parents=True, exist_ok=True)
+        path = target / f"{video_id or 'unknown'}.json"
+        path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)
+    except (OSError, TypeError, ValueError):
+        return "(tidak bisa menyimpan)"
+
+
 def normalise(raw: Optional[dict], video: dict) -> Optional[dict]:
-    """Turn the model's JSON into the canonical note record. None if unusable."""
+    """Turn the model's JSON into the canonical note record. None if unusable.
+
+    Tolerant by design: models drift from the requested schema and some answer
+    with Indonesian keys ("ringkasan", "konsep_kunci", "tugas") or wrap the
+    payload. All of those are accepted instead of throwing a paid answer away.
+    """
+    if isinstance(raw, list):
+        raw = raw[0] if raw and isinstance(raw[0], dict) else None
     if not isinstance(raw, dict):
+        log.warning("model response is not a JSON object (%s)", type(raw).__name__)
         return None
-    # Some gateways wrap the payload, e.g. {"notes": {...}} or {"data": {...}}.
-    for wrapper in ("notes", "result", "data", "output"):
-        inner = raw.get(wrapper)
-        if isinstance(inner, dict) and ("summary" in inner or "assignments" in inner):
-            raw = inner
-            break
-    summary = _clean_markers(_as_text(raw.get("summary")))
-    concepts = normalise_key_concepts(raw.get("key_concepts") or raw.get("keyConcepts"))
+    raw = _unwrap(raw)
+
+    summary_raw = _pick(raw, SUMMARY_KEYS)
+    if isinstance(summary_raw, (list, tuple)):
+        summary_raw = " ".join(_as_text(x) for x in summary_raw if _as_text(x))
+    summary = _clean_markers(_as_text(summary_raw))
+    concepts = normalise_key_concepts(_pick(raw, CONCEPT_KEYS))
     if not summary and not concepts:
-        log.warning("model response has neither summary nor key concepts")
+        log.warning(
+            "model response has neither summary nor key concepts (keys received: %s)",
+            ", ".join(sorted(raw)) or "-",
+        )
         return None
     course = _course_of(video)
-    title = _clean_markers(_as_text(raw.get("title"))) or _clean_markers(video.get("title") or "")
-    assignments_raw = raw.get("assignments")
+    title = _clean_markers(_as_text(_pick(raw, TITLE_KEYS))) or _clean_markers(video.get("title") or "")
+    assignments_raw = _pick(raw, ASSIGNMENT_KEYS)
     if isinstance(assignments_raw, dict):
         assignments_raw = [assignments_raw]
     if not isinstance(assignments_raw, list):
@@ -319,7 +387,7 @@ def normalise(raw: Optional[dict], video: dict) -> Optional[dict]:
         "language": "id",
         "summary": summary,
         "key_concepts": concepts,
-        "tags": normalise_tags(raw.get("tags")),
+        "tags": normalise_tags(_pick(raw, TAG_KEYS)),
         "assignments": assignments,
         "dropped_assignments": max(0, len(assignments_raw) - len(assignments)),
     }

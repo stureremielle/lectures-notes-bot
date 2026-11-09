@@ -391,6 +391,72 @@ class TestCourseResolution(unittest.TestCase):
         self.assertEqual(resolve_course({"title": "Rekaman 1"}, None, [], "Lainnya"), "Lainnya")
 
 
+class TestSchemaDrift(unittest.TestCase):
+    """The model may answer with Indonesian or wrapped keys; never lose the answer."""
+
+    VIDEO = {"id": "v1", "title": "SPK M1", "playlist_title": "PTA"}
+
+    def norm(self, raw):
+        return notes.normalise(raw, self.VIDEO)
+
+    def test_indonesian_keys(self):
+        n = self.norm(
+            {
+                "judul": "Heap",
+                "ringkasan": "Rangkuman panjang kuliah.",
+                "konsep_kunci": [{"term": "heap", "explanation": "struktur pohon"}],
+                "tag": ["struktur data"],
+                "tugas": [{"text": "Buat laporan", "type": "tugas"}],
+            }
+        )
+        self.assertIsNotNone(n)
+        self.assertEqual(n["summary"], "Rangkuman panjang kuliah.")
+        self.assertEqual(n["key_concepts"][0]["term"], "heap")
+        self.assertEqual(n["tags"], ["struktur data"])
+        self.assertEqual(n["assignments"][0]["text"], "Buat laporan")
+
+    def test_wrapped_payload(self):
+        n = self.norm({"catatan": {"summary": "S.", "konsep_kunci": ["heap", "hash"]}})
+        self.assertIsNotNone(n)
+        self.assertEqual(len(n["key_concepts"]), 2)
+
+    def test_single_unknown_wrapper(self):
+        n = self.norm({"hasilnya": {"ringkasan": "R.", "konsep_kunci": [{"term": "a"}]}})
+        self.assertIsNotNone(n)
+        self.assertEqual(n["summary"], "R.")
+
+    def test_list_summary_and_leading_list(self):
+        self.assertEqual(self.norm({"summary": ["satu", "dua"]})["summary"], "satu dua")
+        self.assertIsNotNone(self.norm([{"summary": "x"}]))
+
+    def test_english_schema_still_works(self):
+        n = self.norm(
+            {
+                "title": "T",
+                "summary": "S.",
+                "key_concepts": [{"term": "heap", "explanation": "x"}],
+                "tags": ["a"],
+                "assignments": [],
+            }
+        )
+        self.assertEqual(n["language"], "id")
+        self.assertEqual(n["title"], "T")
+
+    def test_unknown_keys_are_reported(self):
+        with self.assertLogs("notes", level="WARNING") as cap:
+            self.assertIsNone(self.norm({"foo": "bar"}))
+        self.assertIn("foo", "\n".join(cap.output))
+
+    def test_dump_unusable(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as d:
+            path = notes.dump_unusable(Path(d) / "cache", "v1", {"foo": "bar"})
+            self.assertTrue(Path(path).exists())
+            self.assertIn("foo", Path(path).read_text(encoding="utf-8"))
+
+
 class TestReminders(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

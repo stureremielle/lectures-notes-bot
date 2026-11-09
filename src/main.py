@@ -172,7 +172,12 @@ def process_video(ctx: Context, video: dict, playlist_name: str, limit_hit: bool
         return None
     note = notes.normalise(raw, video)
     if note is None:
-        log.error("model returned unusable notes for %s; skipping this video", vid)
+        saved = notes.dump_unusable(ctx.cfg.cache_dir, vid, raw)
+        log.error(
+            "model returned unusable notes for %s; skipping this video (jawaban mentah: %s)",
+            vid,
+            saved,
+        )
         return None
     if note.get("dropped_assignments"):
         log.info("dropped %d low-quality/duplicate assignment(s) for %s", note["dropped_assignments"], vid)
