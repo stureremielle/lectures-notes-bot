@@ -14,7 +14,65 @@ tugas, berkas `.ics`, dan **pengingat T-1 / T-0**.
 
 ---
 
-## Isi pesan Discord
+## Memperbarui bot (workflow yang dipakai)
+
+Kode hidup di GitHub, image dibangun **di box** — tidak ada registry, tidak ada
+token di box. Folder kerja di box: `/opt/lecture-notes-bot` (clone repo).
+
+```bash
+ssh box
+cd /opt/lecture-notes-bot
+sudo ./scripts/update.sh      # git pull --ff-only + docker build -t lecture-notes-bot:latest .
+sudo ./scripts/restart.sh     # docker compose up -d --force-recreate (atau "Update the stack" di Portainer)
+```
+
+Yang **tidak** pernah hilang saat update: `state.json`, PNG kalender, `.ics`, dan
+`config.yaml` — state ada di named volume `lecture-notes-data`, config di file
+milik stack. `update.sh` menampilkan ringkasan state sebelum dan sesudah build.
+
+**Ubah konfigurasi (URL playlist, jadwal) tidak butuh update maupun restart:**
+`watch` membaca ulang `config.yaml` setiap tick.
+
+| Tugas | Perintah |
+|---|---|
+| Build pertama / setelah ubuntu upgrade | `sudo ./scripts/build.sh` (tambah `--no-cache` bila perlu) |
+| Update kode | `sudo ./scripts/update.sh` lalu `sudo ./scripts/restart.sh` |
+| Lihat file config yang dipakai container | `sudo ./scripts/config.sh path` |
+| Buat config.yaml kalau belum ada | `sudo ./scripts/config.sh install` |
+| Edit config.yaml | `sudo ./scripts/config.sh edit` |
+| Cek semua playlist punya URL | `sudo ./scripts/config.sh check` |
+| Jalankan CLI di container (state yang sama) | `sudo ./scripts/bot.sh run --playlist "<URL>" --force --limit 1` |
+| Ringkasan state | `sudo ./scripts/bot.sh state` |
+| Log | `docker logs --tail 50 -f lecture-notes-bot` |
+
+### Pasang box baru dari nol
+
+```bash
+git clone https://github.com/stureremielle/lectures-notes-bot.git /tmp/lnb
+sudo /tmp/lnb/scripts/setup-box.sh          # clone ke /opt/lecture-notes-bot, build, siapkan config
+```
+
+lalu ikuti langkah Portainer yang dicetak skrip itu (stack **Repository**,
+`refs/heads/main`, compose path `docker-compose.portainer.yml`).
+
+### Soal file `config.yaml` di stack
+
+Portainer menyimpan stack Repository di `/data/compose/<id>/…` dan menyalin
+`config.yaml` yang di-upload ke editor menjadi file di folder itu — tapi file
+yang di-upload **tidak ditimpa** oleh tarikan git berikutnya, jadi aman.
+compose meng-bind-mount `/data/compose/1/config.yaml`; kalau ID stack Anda
+bukan `1`, ubah satu baris itu (lihat `docker inspect lecture-notes-bot`) atau
+pakai alternatif bind direktori yang sudah dicatat di komentar compose.
+
+### Kenapa image di-build di box, bukan di GitHub Actions
+
+* box ini hanya menarik kode publik, tanpa token registry, tanpa package GHCR;
+* `docker build` native di aarch64 cepat (base `python:3.12-slim` + Pillow + yt-dlp);
+* kalau nanti mau CI: job `docker buildx --platform linux/arm64` yang push ke
+  GHCR bisa ditambahkan dan baris `image:` diubah ke `ghcr.io/…`.
+
+---
+
 
 ### Channel `#notes`
 
@@ -322,6 +380,7 @@ src/
 prompts/{notes_system,notes_user,condense}.md
 tests/test_core.py     # unit test tanpa jaringan
 tests/test_e2e.py      # CLI end-to-end dengan LLM tiruan
+scripts/             # helper untuk box: build / update / restart / config / bot / setup
 ```
 
 Modul tambahan di luar struktur saran: `timeutil.py` (zona WITA bersama,

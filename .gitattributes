@@ -1,0 +1,10 @@
+# Shell scripts must keep LF so they run on Armbian/Debian containers.
+*.sh            text eol=lf
+*.py            text eol=lf
+*.md            text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+Dockerfile      text eol=lf
+.gitignore      text eol=lf
+.env.example    text eol=lf
+requirements.txt text eol=lf

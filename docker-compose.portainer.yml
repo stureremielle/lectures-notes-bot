@@ -1,16 +1,37 @@
-# Portainer stack (paste into the Portainer web editor: Stacks -> Add stack -> Web editor).
+# Portainer stack for lecture-notes-bot.
 #
-# Build the image on the box first (or on a build machine and `docker save | ssh docker load`):
-#     cd /opt/lecture-notes-bot && docker build -t lecture-notes-bot:latest .
+# Two ways Portainer can consume this file:
+#
+#  A. Repository stack (recommended)
+#     Stacks -> Add stack -> Repository
+#       Repository:        this GitHub repo (add "Git credentials" if private;
+#                          a fine-grained read-only PAT is enough)
+#       Reference:         refs/heads/main
+#       Compose path:      docker-compose.portainer.yml
+#       Environment:       the six variables below
+#     Then upload config.yaml ONCE via the stack's editor ("Add config.yaml",
+#     or paste config.example.yaml). Portainer keeps that file per stack and
+#     git pulls do not overwrite it.
+#
+#  B. Web editor (copy/paste this file)
+#     Same environment variables, same result.
+#
+# Either way the image itself is built ON THE BOX by scripts/update.sh:
+#     git pull -> docker build -t lecture-notes-bot:latest .
+# "Update the stack" (or scripts/restart.sh) then recreates the container.
 #
 # Deliberately:
 #   * no `build:` — Portainer resolves relative build contexts under
 #     /data/compose/<id>/, not where your sources live;
-#   * no `env_file:` — put the secrets in Portainer's environment variables
-#     (they are interpolated below);
-#   * config.yaml is bind-mounted from an absolute host path;
-#   * /app/data lives on a named volume so state survives recreation
-#     (baselines, skipped, videos, reminded, calendar_last_week).
+#   * no `env_file:` — secrets live in Portainer's environment variables;
+#   * config.yaml is bind-mounted from an absolute host path (and is NOT
+#     overwritten by git pulls, so playlist URLs survive updates);
+#   * /app/data lives on a named volume so state survives every recreate.
+#
+# If your stack id is not 1, change the config path below to the one Portainer
+# creates (see `docker inspect lecture-notes-bot` -> Mounts -> Source), or use
+# the directory-mount alternative in the comments (scripts/config.sh manages
+# that file: `path`, `install`, `edit`, `check`).
 services:
   lecture-notes-bot:
     image: lecture-notes-bot:latest
@@ -24,7 +45,10 @@ services:
       - DISCORD_NOTES_WEBHOOK=${DISCORD_NOTES_WEBHOOK}
       - DISCORD_CALENDAR_WEBHOOK=${DISCORD_CALENDAR_WEBHOOK}
     volumes:
-      - /opt/lecture-notes-bot/config.yaml:/app/config.yaml:ro
+      - /data/compose/1/config.yaml:/app/config.yaml:ro
+      # Alternative, independent of the stack id: bind a host directory and
+      # set LECTURE_BOT_CONFIG instead (scripts/config.sh manages that file).
+      # - /opt/lecture-notes-bot:/app/config:ro
       - lecture-notes-data:/app/data
     logging:
       driver: json-file
