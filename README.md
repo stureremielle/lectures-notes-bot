@@ -141,12 +141,15 @@ Tidak ada header lain: tidak ada tabel definisi, tidak ada bagian rumus, tidak
 ada soal review.
 
 ### Channel `#calendar`
-Default: **pengingat saja** — satu pesan berisi ping saat ada tenggat **besok**
-(T-1), lengkap dengan mata kuliah, tanggal, dan menit transkrip sumbernya.
+Pengingat bergulir: setiap tick (19:00 WITA) bot menyebut **semua tugas yang
+tenggatnya 0–7 hari lagi** — jadi tugas "minggu depan" disebut setiap malam
+sampai jatuh tempo. Tenggat yang **sudah lewat dianggap selesai** dan tidak
+pernah disebut lagi. Satu pesan per tugas per hari.
 
 ```yaml
 reminders:
-  days_before: [1]        # hanya sehari sebelum
+  window_days: 7          # 0 = kembali ke days_before (T-1 persis)
+  days_before: [1]        # hanya dipakai bila window_days: 0
   mention: "@everyone"    # "", "@here", atau "role:<id>" bila tak ingin ping
 calendar:
   post_assignment_lists: false   # daftar tugas per kuliah
