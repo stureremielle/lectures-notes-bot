@@ -48,12 +48,12 @@ if [ -n "$ROOTDIR" ]; then
   fi
   rm -f "$ROOTDIR/.lnb-write-test"
   ok_dir="$ROOTDIR/buildkit"
+  DRIVER=$(docker info --format '{{.Driver}}' 2>/dev/null || echo '?')
+  say "storage driver: $DRIVER"
   if [ "$LEGACY" = "0" ] && [ ! -d "$ok_dir" ]; then
-    warn "BuildKit cache tidak ada di $ok_dir (sisa power cut / data root baru)."
-    warn "Biasanya cukup: sudo systemctl restart docker  lalu build lagi."
-    warn "Kalau masih gagal: sudo rm -rf $ok_dir"
-    warn "Catatan: '--legacy' hanya bekerja tanpa containerd image store;"
-    warn "setup ini memakai containerd snapshots, jadi tetap pakai builder baru."
+    warn "BuildKit state tidak ada di $ok_dir (sisa power cut)."
+    warn "Builder baru akan membuatnya lagi; kalau gagal dengan 'blob not found':"
+    printf '    sudo systemctl stop docker\n    sudo rm -rf %s\n    sudo systemctl start docker\n' "$ok_dir"
   fi
 fi
 
@@ -65,14 +65,16 @@ if [ "$LEGACY" = "1" ]; then
   say "builder: klasik (DOCKER_BUILDKIT=0)"
   # shellcheck disable=SC2086
   if ! DOCKER_BUILDKIT=0 docker build $BUILD_ARGS; then
-    warn "build klasik gagal juga. Kalau pesannya soal cachemounts/buildkit:"
-    printf '    sudo rm -rf %s/buildkit   # cache saja, image tidak terhapus\n' "${ROOTDIR:-<root>}"
+    warn "build klasik gagal juga. Bersihkan state BuildKit lalu ulangi:"
+    printf '    sudo systemctl stop docker\n    sudo rm -rf %s/buildkit\n    sudo systemctl start docker\n' "${ROOTDIR:-<root>}"
     exit 1
   fi
 else
   if ! docker build $BUILD_ARGS; then
-    warn "build gagal. Bila error menyebut buildkit/cachemounts:"
-    printf '    sudo rm -rf %s/buildkit   # atau: ./scripts/build.sh --legacy\n' "${ROOTDIR:-<root>}"
+    warn "build gagal. Bila error menyebut buildkit / 'blob not found' / cachemounts:"
+    printf '    sudo systemctl stop docker\n    sudo rm -rf %s/buildkit\n    sudo systemctl start docker\n' "${ROOTDIR:-<root>}"
+    printf '    lalu: %s/scripts/build.sh\n' "$HOST_DIR"
+    printf '    masih gagal? builder klasik: %s/scripts/build.sh --legacy\n' "$HOST_DIR"
     exit 1
   fi
 fi
