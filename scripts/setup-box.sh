@@ -27,20 +27,37 @@ else
   git clone "$REPO_URL" "$HOST_DIR"
 fi
 
+# The clone must belong to the invoking user, not to root: `git pull` writes to
+# .git/, and the whole point of a git checkout is updating it without sudo.
+owner_fix() {
+  [ "$(id -u)" = "0" ] || return 0
+  [ -n "${SUDO_USER:-}" ] || return 0
+  [ "$SUDO_USER" = "root" ] && return 0
+  say "Pemilik repo -> $SUDO_USER (agar 'git pull' bisa tanpa sudo)"
+  chown -R "$SUDO_USER:$(id -gn "$SUDO_USER" 2>/dev/null || echo "$SUDO_USER")" "$HOST_DIR"
+}
+owner_fix
+
 say "Build image (native $(uname -m))"
 "$HOST_DIR/scripts/build.sh"
 
 say "Folder konfigurasi"
 mkdir -p "$HOST_DIR"
 if [ ! -f "$HOST_DIR/config.yaml" ]; then
+  if [ -d "$HOST_DIR/config.yaml" ]; then
+    warn "$HOST_DIR/config.yaml adalah direktori (sisa bind mount) — dipindahkan"
+    mv "$HOST_DIR/config.yaml" "$HOST_DIR/config.yaml.dir-bak-$(date +%Y%m%d-%H%M%S)"
+  fi
   cp "$HOST_DIR/config.example.yaml" "$HOST_DIR/config.yaml"
-  say "config.yaml dibuat dari template — isi 7 URL playlist di dalamnya"
+  chmod 644 "$HOST_DIR/config.yaml"
+  say "config.yaml dibuat dari template — isi URL playlist di dalamnya"
 else
   say "config.yaml sudah ada, tidak ditimpa"
 fi
+owner_fix
 
 say "Isi konfigurasi (termasuk TANPA nomor ruang / jam kelas):"
-printf '  sudo ${EDITOR:-nano} %s/config.yaml\n\n' "$HOST_DIR"
+printf '  ${EDITOR:-nano} %s/config.yaml\n\n' "$HOST_DIR"
 
 cat <<EOF
 ${C_OK}Langkah Portainer${C_OFF}

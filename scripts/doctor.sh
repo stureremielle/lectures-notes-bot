@@ -55,6 +55,20 @@ else
   ok "container memakai image terbaru"
 fi
 
+head_ "Repositori ($HOST_DIR)"
+INVOKER="${SUDO_USER:-$(id -un)}"
+if [ -d "$HOST_DIR/.git" ]; then
+  REPO_OWNER=$(stat -c '%U' "$HOST_DIR/.git" 2>/dev/null || echo '?')
+  if [ "$REPO_OWNER" = "$INVOKER" ]; then
+    ok "milik $INVOKER — 'git pull' bisa tanpa sudo"
+  else
+    bad ".git milik '$REPO_OWNER', bukan '$INVOKER' — 'git pull' akan: permission denied"
+    printf '         perbaiki: sudo chown -R %s:%s %s\n' "$INVOKER" "$(id -gn "$INVOKER" 2>/dev/null || echo "$INVOKER")" "$HOST_DIR"
+  fi
+else
+  warn "$HOST_DIR bukan clone git — update lewat git tidak tersedia"
+fi
+
 head_ "config.yaml (bind mount)"
 CFG_SRC=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/config.yaml"}}{{.Source}}{{end}}{{end}}' "$APP_NAME" 2>/dev/null || true)
 if [ -z "$CFG_SRC" ]; then
