@@ -45,16 +45,20 @@ reminders:
   # ALL date math uses this zone. WITA — not WIB.
   timezone: "Asia/Makassar"
 
-  # Offsets (in days) before the due date that get a reminder. 1 = T-1 (the day
-  # before), 0 = T-0 (the due date itself). Default is T-1 only, so #calendar
-  # is a "besok ada tenggat" channel rather than a feed.
+  # Rolling window: every run reminds about assignments whose deadline is
+  # 0..window_days away, so a task due in a week is mentioned today, tomorrow,
+  # and every evening until it is due. A deadline that has already passed is
+  # assumed done and never mentioned again. Set 0 to fall back to days_before.
+  window_days: 7
+
+  # Used only when window_days is 0: exact offsets (1 = T-1, 0 = T-0).
   days_before: [1]
 
   # Earliest time of day the reminder pass may send (WITA).
   # IMPORTANT: this MUST be earlier than the first entry of
   # `watch.run_at_local`, otherwise the tick that should send the reminder
   # runs after the window opened and nothing fires on time. With the default
-  # 19:00 tick, keep this at 08:00.
+  # 19:00 tick, keep this at 08:00 so the 19:00 tick does the sending.
   send_time_local: "08:00"
 
   # Ping attached to every reminder: "@everyone", "@here", "role:<id>", or ""

@@ -722,6 +722,92 @@ class TestScheduleAnchoring(unittest.TestCase):
         self.assertEqual(due.weekday(), 0)
 
 
+class TestReminderWindow(unittest.TestCase):
+    """Rolling 7-day window: every evening while due within a week; past = done."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.state = State(Path(self.tmp.name) / "state.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    @staticmethod
+    def item(text, due):
+        return {
+            "text": text,
+            "due_date": due,
+            "type": "tugas",
+            "course": "SPK",
+            "confidence": "high",
+            "key": text,
+        }
+
+    def items(self):
+        return [
+            self.item("lewat 3 hari", "2026-11-07"),
+            self.item("hari ini", "2026-11-10"),
+            self.item("besok", "2026-11-11"),
+            self.item("3 hari", "2026-11-13"),
+            self.item("7 hari", "2026-11-17"),
+            self.item("8 hari", "2026-11-18"),
+            self.item("tanpa tanggal", None),
+        ]
+
+    def at(self, day, hour=19):
+        return dt.datetime(2026, 11, day, hour, 0, tzinfo=WITA)
+
+    def test_window_contents(self):
+        cands, diag = reminders.pending(
+            self.items(), self.state, now=self.at(10), send_time=dt.time(8, 0), window_days=7
+        )
+        texts = [c[0]["text"] for c in cands]
+        self.assertIn("hari ini", texts)
+        self.assertIn("besok", texts)
+        self.assertIn("7 hari", texts)
+        self.assertNotIn("8 hari", texts)      # outside the window
+        self.assertNotIn("lewat 3 hari", texts)  # passed = assumed done
+        self.assertEqual(diag["undated"], 1)
+        # most urgent first
+        self.assertEqual([c[1] for c in cands], sorted(c[1] for c in cands))
+
+    def test_fires_every_day_until_due(self):
+        # Day 10: "3 hari" (13 Nov) is D-3, so it fires.
+        c1, _ = reminders.pending(
+            self.items(), self.state, now=self.at(10), send_time=dt.time(8, 0), window_days=7
+        )
+        self.assertIn("3 hari", [c[0]["text"] for c in c1])
+        for item, off in c1:
+            self.state.mark_reminded(reminders.reminder_key(item, off))
+        # Same day again -> nothing (deduped).
+        c2, diag2 = reminders.pending(
+            self.items(), self.state, now=self.at(10), send_time=dt.time(8, 0), window_days=7
+        )
+        self.assertEqual(c2, [])
+        self.assertGreater(diag2["already_sent"], 0)
+        # Next day it fires again, with a smaller remaining-days count.
+        c3, _ = reminders.pending(
+            self.items(), self.state, now=self.at(11), send_time=dt.time(8, 0), window_days=7
+        )
+        again = dict((c[0]["text"], c[1]) for c in c3)
+        self.assertEqual(again.get("3 hari"), 2)
+
+    def test_before_send_time_sends_nothing(self):
+        cands, diag = reminders.pending(
+            self.items(), self.state, now=self.at(10, hour=6), send_time=dt.time(8, 0), window_days=7
+        )
+        self.assertEqual(cands, [])
+        self.assertTrue(diag["before_send_time"])
+
+    def test_exact_offsets_still_available(self):
+        cands, _ = reminders.pending(
+            self.items(), self.state, now=self.at(10), send_time=dt.time(8, 0), days_before=[1]
+        )
+        self.assertEqual([c[0]["text"] for c in cands], ["besok"])
+
+
 class TestReminders(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

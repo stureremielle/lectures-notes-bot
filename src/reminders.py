@@ -50,6 +50,28 @@ def due_offsets(
     return out
 
 
+def due_within(
+    items: Iterable[dict],
+    today: _dt.date,
+    window_days: int,
+) -> list[tuple[dict, int]]:
+    """Every assignment due in ``0..window_days`` days, most urgent first.
+
+    Negative deltas (already due/past) are skipped: a passed deadline is assumed
+    done, so the channel never nags about old work.
+    """
+    out: list[tuple[dict, int]] = []
+    for item in A.dedupe(items):
+        d = parse_date(item.get("due_date"))
+        if d is None:
+            continue
+        delta = (d - today).days
+        if 0 <= delta <= window_days:
+            out.append((item, delta))
+    out.sort(key=lambda t: (t[1], str(t[0].get("course") or "")))
+    return out
+
+
 def pending(
     items: Iterable[dict],
     state,
@@ -57,6 +79,7 @@ def pending(
     days_before: Iterable[int] = (1, 0),
     send_time: Optional[_dt.time] = None,
     force: bool = False,
+    window_days: int = 0,
 ) -> tuple[list[tuple[dict, int]], dict]:
     """Return the reminders that should be sent now plus diagnostics."""
     now = now or _dt.datetime.now(WITA)
@@ -66,6 +89,7 @@ def pending(
         "undated": 0,
         "already_sent": 0,
         "before_send_time": False,
+        "window_days": window_days,
         "now": now.strftime("%Y-%m-%d %H:%M WITA"),
         "today": today.isoformat(),
     }
@@ -84,7 +108,10 @@ def pending(
             send_time.strftime("%H:%M"),
         )
         return [], diagnostics
-    todays = due_offsets(items, today, days_before)
+    if window_days and window_days > 0:
+        todays = due_within(items, today, window_days)
+    else:
+        todays = due_offsets(items, today, days_before)
     candidates: list[tuple[dict, int]] = []
     for item, off in todays:
         key = reminder_key(item, off)
@@ -92,7 +119,10 @@ def pending(
             diagnostics["already_sent"] += 1
             continue
         candidates.append((item, off))
-    candidates.sort(key=lambda t: (-t[1], str(t[0].get("course") or "")))
+    if window_days and window_days > 0:
+        candidates.sort(key=lambda t: (t[1], str(t[0].get("course") or "")))
+    else:
+        candidates.sort(key=lambda t: (-t[1], str(t[0].get("course") or "")))
     return candidates, diagnostics
 
 
@@ -103,6 +133,9 @@ def format_dry_run(candidates: list[tuple[dict, int]], diagnostics: dict) -> str
         f"Total tugas: {diagnostics.get('total')} · tanpa tanggal: {diagnostics.get('undated')} · "
         f"sudah dikirim: {diagnostics.get('already_sent')}",
     ]
+    window = diagnostics.get('window_days') or 0
+    if window:
+        lines.append(f"Mode jendela: tugas dengan tenggat 0-{window} hari lagi (lewat = dianggap selesai)")
     if diagnostics.get("before_send_time"):
         lines.append("Waktu sekarang masih sebelum send_time_local: tidak ada yang dikirim.")
     if not candidates:
@@ -184,8 +217,15 @@ def run_reminder_pass(
     send_time = cfg.send_time()
     days_before = cfg.reminder_days_before()
     items = A.collect_from_videos(state.all_videos())
+    window_days = cfg.get_int("reminders.window_days", 0)
     candidates, diag = pending(
-        items, state, now=now, days_before=days_before, send_time=send_time, force=force
+        items,
+        state,
+        now=now,
+        days_before=days_before,
+        send_time=send_time,
+        force=force,
+        window_days=window_days,
     )
     result = {"candidates": len(candidates), "sent": 0, "diagnostics": diag}
     mention = mention_of(cfg)
