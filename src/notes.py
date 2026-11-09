@@ -19,6 +19,20 @@ from .timeutil import WITA, format_date_id, parse_date
 
 log = get_logger("notes")
 
+
+def _course_of(video: dict) -> str:
+    """Course label: resolved course first, playlist name is only a fallback.
+
+    A single playlist can hold several courses, so `course` is set by
+    `courses.resolve_course` during the pipeline.
+    """
+    return (
+        video.get("course")
+        or video.get("course_name")
+        or video.get("playlist_title")
+        or "Kuliah"
+    )
+
 MAX_ASSIGNMENTS = 10
 DISCLAIMER = (
     "_Catatan: hanya tugas yang **diucapkan secara lisan** dalam kuliah yang terdeteksi. "
@@ -114,7 +128,7 @@ def condense_transcript(client, text: str, chunk_chars: int = 18000) -> str:
 # ---------------------------------------------------------------------------
 def build_messages(cfg, video: dict, transcript: str, meta: Optional[dict] = None) -> list[dict]:
     meta = meta or {}
-    course = video.get("playlist_title") or video.get("course_name") or "Kuliah"
+    course = _course_of(video)
     title = video.get("title") or meta.get("title") or ""
     kind = CAPTION_KIND_ID.get(str(meta.get("kind") or ""), str(meta.get("kind") or "tidak diketahui"))
     duration = meta.get("duration") or video.get("duration")
@@ -281,7 +295,7 @@ def normalise(raw: Optional[dict], video: dict) -> Optional[dict]:
     if not summary and not concepts:
         log.warning("model response has neither summary nor key concepts")
         return None
-    course = video.get("playlist_title") or video.get("course_name") or "Kuliah"
+    course = _course_of(video)
     title = _clean_markers(_as_text(raw.get("title"))) or _clean_markers(video.get("title") or "")
     assignments_raw = raw.get("assignments")
     if isinstance(assignments_raw, dict):
@@ -370,7 +384,7 @@ def _render_assignment_line(a: dict) -> str:
 
 
 def build_embed(note: dict, video: dict) -> dict:
-    course = video.get("playlist_title") or video.get("course_name") or "Kuliah"
+    course = _course_of(video)
     title = note.get("title") or video.get("title") or "Catatan Kuliah"
     url = video.get("webpage_url") or video.get("url")
     n_assign = len(note.get("assignments") or [])
@@ -402,7 +416,7 @@ def build_embed(note: dict, video: dict) -> dict:
 
 def render_notes_message(note: dict, video: dict) -> str:
     """The full "note message": header line + body (two headers)."""
-    course = video.get("playlist_title") or video.get("course_name") or "Kuliah"
+    course = _course_of(video)
     title = note.get("title") or video.get("title") or "Catatan Kuliah"
     url = video.get("webpage_url") or video.get("url") or ""
     head = f"# 📚 {title}\n**{course}**"

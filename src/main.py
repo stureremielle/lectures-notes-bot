@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from . import assignments as A
-from . import calendar_image, notes, playlist, prompts, reminders, transcript
+from . import calendar_image, courses, notes, playlist, prompts, reminders, transcript
 from .config import Config, ConfigError, load_config
 from .discord_webhook import DiscordWebhook, split_message
 from .llm import LLMError, make_client
@@ -64,6 +64,11 @@ class Context:
             self._client = make_client(self.cfg)
         return self._client
 
+    @property
+    def aliases(self) -> courses.AliasMap:
+        """Course aliases from config.yaml (``playlists[].course_aliases``)."""
+        return courses.AliasMap.from_config(self.cfg)
+
     def now(self) -> _dt.datetime:
         return _dt.datetime.now(self.tz)
 
@@ -106,9 +111,19 @@ def process_video(ctx: Context, video: dict, playlist_name: str, limit_hit: bool
     """Transcript -> LLM -> normalise -> post. Returns the stored record or None."""
     video = dict(video)
     video["playlist_title"] = playlist_name or video.get("playlist_title") or ""
+    # One playlist can hold several courses: resolve the course per video
+    # (title aliases -> configured names -> title prefix), never from the
+    # playlist name alone.
+    course = courses.resolve_course(
+        video,
+        ctx.aliases,
+        [p["name"] for p in ctx.cfg.playlists()],
+        ctx.cfg.get_str("pipeline.course_fallback", "Lainnya"),
+    )
+    video["course"] = course
     url = video.get("webpage_url") or video.get("url")
     vid = video.get("id")
-    log.info("processing: %s (%s) — %s", vid, playlist_name, video.get("title") or url)
+    log.info("processing: %s [%s / %s] — %s", vid, playlist_name, course, video.get("title") or url)
     try:
         text, meta = transcript.build_transcript(url)
     except transcript.TranscriptError as exc:
@@ -117,7 +132,22 @@ def process_video(ctx: Context, video: dict, playlist_name: str, limit_hit: bool
     except Exception as exc:  # noqa: BLE001 - one bad video must not kill the run
         log.warning("transcript error for %s: %s", vid, exc)
         return None
-    log.info("transcript: %d chars, %d cues, %s/%s", len(text), meta.get("cues", 0), meta.get("kind"), meta.get("lang"))
+    if meta.get("title") and not video.get("title"):
+        video["title"] = meta["title"]
+        course = courses.resolve_course(
+            video,
+            ctx.aliases,
+            [p["name"] for p in ctx.cfg.playlists()],
+            ctx.cfg.get_str("pipeline.course_fallback", "Lainnya"),
+        )
+        video["course"] = course
+    log.info(
+        "transcript: %d chars, %d cues, %s/%s",
+        len(text),
+        meta.get("cues", 0),
+        meta.get("kind"),
+        meta.get("lang"),
+    )
     try:
         raw = notes.generate_notes(ctx.client, ctx.cfg, video, text, meta)
     except LLMError as exc:
@@ -135,6 +165,7 @@ def process_video(ctx: Context, video: dict, playlist_name: str, limit_hit: bool
         {
             "id": vid,
             "playlist_title": playlist_name,
+            "course": course,
             "caption_lang": meta.get("lang"),
             "caption_kind": meta.get("kind"),
             "transcript_chars": len(text),
@@ -181,13 +212,13 @@ def post_assignments_for(ctx: Context, record: dict) -> None:
     items = (record.get("note") or {}).get("assignments") or []
     if not items:
         return
+    course = record.get("course") or record.get("playlist_title")
     for item in items:
-        item.setdefault("course", record.get("playlist_title"))
+        item.setdefault("course", course)
         item.setdefault("video_title", record.get("title"))
         item.setdefault("video_url", record.get("webpage_url") or record.get("url"))
-    ctx.calendar_hook.send_text(
-        A.render_list(items, title=f"Tugas dari: {record.get('title') or 'kuliah'}")
-    )
+    label = " · ".join(x for x in (course, record.get("title")) if x)
+    ctx.calendar_hook.send_text(A.render_list(items, title=f"Tugas dari: {label or 'kuliah'}"))
 
 
 def post_calendar_snapshot(ctx: Context) -> None:
@@ -296,6 +327,7 @@ def scan_playlist(
             return result
     else:
         candidates = [v for v in videos if _is_new(ctx, v)]
+        candidates = playlist.oldest_first(candidates)
         if backfill:
             # Backfill only matters on the first encounter (handled above); later
             # runs stay incremental even with the flag on.

@@ -247,6 +247,7 @@ class Config(Section):
                     "name": name or url,
                     "url": url,
                     "max_videos": entry.get("max_videos"),
+                    "course_aliases": str(entry.get("course_aliases") or ""),
                     "enabled": bool(entry.get("enabled", True)),
                 }
             )

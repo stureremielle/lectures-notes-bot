@@ -15,6 +15,12 @@ from .logging_setup import get_logger
 log = get_logger("playlist")
 
 _VIDEO_ID_RE = re.compile(r"(?:v=|youtu\.be/|/shorts/|/embed/|/live/)([A-Za-z0-9_-]{11})")
+# Lecture uploads are often titled "M6 SPK 2026 11 09 09 04 36": the date the
+# lecturer recorded is in the title even when yt-dlp's flat extraction reports
+# no upload timestamp.
+_TITLE_DATE_RE = re.compile(
+    r"(?<!\d)(20\d{2})[ _\-./](\d{1,2})[ _\-./](\d{1,2})(?!\d)"
+)
 
 
 class PlaylistError(RuntimeError):
@@ -37,6 +43,19 @@ def is_playlist_url(url: str) -> bool:
     if not url:
         return False
     return ("list=" in url) or ("/playlist" in url) or ("/channel/" in url and "/videos" in url)
+
+
+def date_from_title(title: str) -> Optional[str]:
+    """'M6 SPK 2026 11 09 09 04 36' -> '20261109' (None when absent/invalid)."""
+    import datetime as _dt
+
+    for match in _TITLE_DATE_RE.finditer(str(title or "")):
+        try:
+            d = _dt.date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        except ValueError:
+            continue
+        return d.strftime("%Y%m%d")
+    return None
 
 
 def _entry_to_video(entry: dict) -> Optional[dict]:
@@ -69,6 +88,7 @@ def _entry_to_video(entry: dict) -> Optional[dict]:
         "duration": duration if isinstance(duration, (int, float)) else None,
         "uploader": str(uploader),
         "upload_date": upload_date,
+        "title_date": date_from_title(title),
         "index": entry.get("playlist_index"),
     }
 
@@ -127,10 +147,34 @@ def enumerate_playlist(url: str, limit: Optional[int] = None) -> list[dict]:
 
     log.debug("playlist %s (%s): %d entries", url, title, len(videos))
     for i, v in enumerate(videos, start=1):
-        v.setdefault("index", i)
+        # yt-dlp's flat extraction does not always report playlist_index; the
+        # enumeration order is the playlist order, so index it ourselves.
+        v["index"] = i
         v["playlist_title"] = title
         v["playlist_id"] = playlist_id
     return videos
+
+
+def upload_date_of(video: dict) -> Optional[str]:
+    """YYYYMMDD when known: real upload date first, then the date in the title."""
+    date = str(video.get("upload_date") or "")
+    if len(date) == 8 and date.isdigit():
+        return date
+    return video.get("title_date") or date_from_title(str(video.get("title") or ""))
+
+
+def oldest_first(videos: list[dict]) -> list[dict]:
+    """Sort oldest upload first; undated videos keep their playlist order last.
+
+    YouTube playlist order is not upload order (a lecture uploaded today can sit
+    at the bottom while M1 sits in the middle), so catch-up runs with ``--limit``
+    should start from the oldest lecture.
+    """
+    dated = [v for v in videos if upload_date_of(v)]
+    undated = [v for v in videos if not upload_date_of(v)]
+    dated.sort(key=lambda v: (upload_date_of(v) or "", int(v.get("index") or 0)))
+    undated.sort(key=lambda v: int(v.get("index") or 0))
+    return dated + undated
 
 
 def list_playlist(url: str, limit: Optional[int] = None) -> list[dict]:

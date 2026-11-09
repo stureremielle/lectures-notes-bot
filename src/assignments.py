@@ -58,7 +58,10 @@ def collect_from_videos(videos: Iterable[dict]) -> list[dict]:
         note = video.get("note") or {}
         for a in note.get("assignments") or []:
             item = dict(a)
-            item.setdefault("course", video.get("playlist_title") or video.get("course_name") or "")
+            item.setdefault(
+                "course",
+                video.get("course") or video.get("course_name") or video.get("playlist_title") or "",
+            )
             item.setdefault("video_title", video.get("title") or "")
             item.setdefault("video_id", video.get("id") or video.get("video_id"))
             item.setdefault("video_url", video.get("webpage_url") or video.get("url") or "")

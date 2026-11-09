@@ -394,9 +394,11 @@ def fetch_caption_cues(video_url: str, lang: Optional[str] = None) -> tuple[list
         "lang": track.get("lang"),
         "kind": track.get("kind"),
         "title": info.get("title") or "",
+        "description": (info.get("description") or "")[:1500],
         "duration": info.get("duration"),
         "uploader": info.get("uploader") or info.get("channel") or "",
         "upload_date": info.get("upload_date"),
+        "video_id": info.get("id") or "",
     }
     return cues, meta
 

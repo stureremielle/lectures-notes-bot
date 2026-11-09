@@ -71,6 +71,8 @@ calendar:
 pipeline:
   # --dry-run never writes state.json; this flag exists only for debugging.
   save_state_on_dry_run: false
+  # Course label when the video title gives no clue at all.
+  course_fallback: "Lainnya"
 
 paths:
   data_dir: "data"
@@ -81,28 +83,22 @@ logging:
   level: "INFO"
 
 # -----------------------------------------------------------------------------
-# Courses. Fill in the URL of the playlist for each. Room numbers and class
-# hours are intentionally not encoded anywhere.
+# Playlists.
+#
+# ONE playlist can hold every course of the semester. In that case the course of
+# each video is resolved in this order:
+#   1. `course_aliases` below, matched anywhere in the video title
+#      ("M4 TIS 2026 10 29" -> "Testing dan Implementasi Sistem");
+#   2. a configured `name` the title starts with;
+#   3. the title prefix before a separator ("Sistem Multimedia - Pertemuan 3");
+#   4. `pipeline.course_fallback`.
+# The playlist `name` is the playlist label (e.g. "PTA 2026/2027"), not a course.
+#
+# Room numbers and class hours are intentionally not encoded anywhere.
 # -----------------------------------------------------------------------------
 playlists:
-  - name: "Sistem Penunjang Keputusan"
-    url: ""
+  - name: "PTA 2026/2027"
+    url: "https://www.youtube.com/playlist?list=PLPeIrnQX78dU"
     enabled: true
-  - name: "Sistem Multimedia"
-    url: ""
-    enabled: true
-  - name: "Pengelolaan Proyek Sistem Informasi"
-    url: ""
-    enabled: true
-  - name: "Testing dan Implementasi Sistem"
-    url: ""
-    enabled: true
-  - name: "Business Intelligence"
-    url: ""
-    enabled: true
-  - name: "Sistem Terdistribusi"
-    url: ""
-    enabled: true
-  - name: "Analisis Kinerja Sistem"
-    url: ""
-    enabled: true
+    # Short codes used in the video titles, comma separated.
+    course_aliases: "SPK, SM, PPSI, TIS, TDIS, BI, ST, AKS"

@@ -319,6 +319,78 @@ class TestLLMClient(unittest.TestCase):
         self.assertIsNone(c.complete_json("sys", "user"))
 
 
+class TestCourseResolution(unittest.TestCase):
+    """One playlist, many courses: the course must come from the title."""
+
+    NAMES = [
+        "Sistem Penunjang Keputusan",
+        "Sistem Multimedia",
+        "Pengelolaan Proyek Sistem Informasi",
+        "Testing dan Implementasi Sistem",
+        "Business Intelligence",
+        "Sistem Terdistribusi",
+        "Analisis Kinerja Sistem",
+    ]
+    RAW_ALIASES = {
+        "Sistem Penunjang Keputusan": "SPK",
+        "Sistem Multimedia": "SM",
+        "Pengelolaan Proyek Sistem Informasi": "PPSI",
+        "Testing dan Implementasi Sistem": "TIS, TDIS",
+        "Business Intelligence": "BI",
+        "Sistem Terdistribusi": "ST",
+        "Analisis Kinerja Sistem": "AKS",
+    }
+
+    def setUp(self):
+        from src.courses import AliasMap, parse_aliases
+
+        self.am = AliasMap(
+            (a, course)
+            for course, raw in self.RAW_ALIASES.items()
+            for a in parse_aliases(raw)
+        )
+
+    def resolve(self, title):
+        from src.courses import resolve_course
+
+        return resolve_course({"title": title}, self.am, self.NAMES, "Lainnya")
+
+    def test_codes_in_real_titles(self):
+        cases = {
+            "M4 TIS 2026 10 29": "Testing dan Implementasi Sistem",
+            "TDIS M1 2026 09 30": "Testing dan Implementasi Sistem",
+            "PPSI M5\\M3 2026 10 27 11 57 46": "Pengelolaan Proyek Sistem Informasi",
+            "SPK M5 2026 10 26 09 29 41": "Sistem Penunjang Keputusan",
+            "AKS M2 2026 10 10 14 04 59": "Analisis Kinerja Sistem",
+            "M3 SM 2026 10 13 11 15 43": "Sistem Multimedia",
+            "ST M1 2026 10 02 14 32 08": "Sistem Terdistribusi",
+            "BI M2 2026 10 16 11 01 34": "Business Intelligence",
+        }
+        for title, expected in cases.items():
+            self.assertEqual(self.resolve(title), expected, title)
+
+    def test_no_false_positives(self):
+        # "Kelompok 1 ANIMASI" used to resolve to a bogus "Kelompok" course.
+        self.assertEqual(self.resolve("KELOMPOK 1 ANIMASI UDP & TCP"), "Lainnya")
+        self.assertEqual(self.resolve("2026 10 09 14 43 23"), "Lainnya")
+        self.assertEqual(self.resolve(""), "Lainnya")
+        self.assertEqual(self.resolve("artist interview about systems"), "Lainnya")
+
+    def test_alias_needs_word_boundary(self):
+        self.assertIsNone(self.am.match("M6 TISSUE 2026"))
+        self.assertEqual(self.am.match("m6 tis 2026"), "Testing dan Implementasi Sistem")
+
+    def test_readable_title_prefix(self):
+        self.assertEqual(
+            self.resolve("Sistem Multimedia - Pertemuan 3"), "Sistem Multimedia"
+        )
+
+    def test_skip_is_never_a_course(self):
+        from src.courses import resolve_course
+
+        self.assertEqual(resolve_course({"title": "Rekaman 1"}, None, [], "Lainnya"), "Lainnya")
+
+
 class TestReminders(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -395,10 +467,13 @@ class TestConfig(unittest.TestCase):
 
     def test_example_loads(self):
         cfg = load_config(Path(__file__).resolve().parent.parent / "config.example.yaml")
-        self.assertEqual(len(cfg.playlists()), 7)
-        names = [p["name"] for p in cfg.playlists()]
-        self.assertIn("Sistem Terdistribusi", names)
+        playlists = cfg.playlists()
+        self.assertEqual(len(playlists), 1)
+        self.assertEqual(playlists[0]["name"], "PTA 2026/2027")
+        self.assertIn("list=", playlists[0]["url"])
+        self.assertIn("TIS", playlists[0]["course_aliases"])
         self.assertEqual(cfg.reminder_days_before(), [1, 0])
+        self.assertEqual(cfg.get_str("pipeline.course_fallback"), "Lainnya")
 
     def test_send_time_warning(self):
         cfg = Config({"reminders": {"send_time_local": "20:00"}, "watch": {"run_at_local": "19:00"},
@@ -457,6 +532,19 @@ class TestPrompts(unittest.TestCase):
         self.assertNotIn("{transcript}", user)
         cond = prompts.render("condense", chunk_index=1, chunk_total=2, chunk="teks")
         self.assertIn("bagian 1 dari 2", cond.lower())
+
+
+class TestPlaylistOrder(unittest.TestCase):
+    def test_oldest_first_ignores_playlist_order(self):
+        from src.playlist import oldest_first
+
+        videos = [
+            {"id": "new", "upload_date": "20261109", "index": 1},
+            {"id": "old", "upload_date": "20260928", "index": 2},
+            {"id": "mid", "upload_date": "20261019", "index": 3},
+            {"id": "undated", "index": 4},
+        ]
+        self.assertEqual([v["id"] for v in oldest_first(videos)], ["old", "mid", "new", "undated"])
 
 
 class TestWatchSchedule(unittest.TestCase):
