@@ -338,6 +338,106 @@ def dump_unusable(cache_dir, video_id: str, raw: Any) -> str:
         return "(tidak bisa menyimpan)"
 
 
+_ASSIGNMENT_CUE_RE = re.compile(
+    r"\b(tugas|tugaskan|kelompok|paper|makalah|laporan|presentasi|ppt|powerpoint|"
+    r"dikumpul\w*|mengumpul\w*|kumpul\w*|deadline|tenggat|diundur|dikirim|"
+    r"google\s*drive|format|cover|absen\w*)\b",
+    re.I,
+)
+
+
+def select_assignment_context(transcript: str, max_chars: int = 12000, pad: int = 1) -> str:
+    """Paragraphs likely to contain assignment instructions (plus one on each side)."""
+    paras = [p for p in (transcript or "").split("\n\n") if p.strip()]
+    if not paras:
+        return ""
+    hits = [i for i, p in enumerate(paras) if _ASSIGNMENT_CUE_RE.search(p)]
+    if not hits:
+        return ""
+    keep: set[int] = set()
+    for i in hits:
+        for j in range(max(0, i - pad), min(len(paras), i + pad + 1)):
+            keep.add(j)
+    out: list[str] = []
+    total = 0
+    for i in sorted(keep):
+        para = paras[i]
+        if total + len(para) > max_chars and out:
+            break
+        out.append(para)
+        total += len(para)
+    return "\n\n".join(out)
+
+
+def extract_assignments(client, cfg, video: dict, transcript: str) -> list[dict]:
+    """Second, focused pass: find assignments the summary pass folded into prose.
+
+    Only the paragraphs that mention tasks are sent, so this costs a few
+    thousand tokens instead of re-sending the whole lecture.
+    """
+    context = select_assignment_context(
+        transcript, cfg.get_int("notes.assignment_context_chars", 12000)
+    )
+    if not context.strip():
+        log.info("assignment pass: no assignment-like paragraphs in the transcript")
+        return []
+    body = prompts.render(
+        "assignments",
+        course_name=_course_of(video),
+        video_title=video.get("title") or "",
+        transcript=context,
+    )
+    try:
+        data = client.complete_json(
+            "Kamu mengekstrak instruksi tugas dari transkrip kuliah. Balas JSON saja.",
+            body,
+            max_tokens=2000,
+            temperature=0.0,
+        )
+    except Exception as exc:  # noqa: BLE001 - the note itself is still valid
+        log.warning("assignment pass failed: %s", exc)
+        return []
+    if not isinstance(data, dict):
+        log.warning("assignment pass returned no usable JSON")
+        return []
+    raw_items = _pick(data, ASSIGNMENT_KEYS) or []
+    if isinstance(raw_items, dict):
+        raw_items = [raw_items]
+    if not isinstance(raw_items, list):
+        raw_items = []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        norm = normalise_assignment(item, _course_of(video), video)
+        if norm is None or norm["key"] in seen:
+            continue
+        seen.add(norm["key"])
+        out.append(norm)
+        if len(out) >= MAX_ASSIGNMENTS:
+            break
+    log.info("assignment pass: %d tugas dari %d karakter konteks", len(out), len(context))
+    return out
+
+
+def merge_assignments(note: dict, extra: list[dict]) -> int:
+    """Add second-pass assignments the first pass missed. Returns how many added."""
+    if not extra:
+        return 0
+    existing = note.get("assignments") or []
+    seen = {a.get("key") for a in existing}
+    added = 0
+    for item in extra:
+        if item.get("key") in seen:
+            continue
+        existing.append(item)
+        seen.add(item.get("key"))
+        added += 1
+        if len(existing) >= MAX_ASSIGNMENTS:
+            break
+    note["assignments"] = existing[:MAX_ASSIGNMENTS]
+    return added
+
+
 def normalise(raw: Optional[dict], video: dict) -> Optional[dict]:
     """Turn the model's JSON into the canonical note record. None if unusable.
 

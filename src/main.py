@@ -181,6 +181,24 @@ def process_video(ctx: Context, video: dict, playlist_name: str, limit_hit: bool
         return None
     if note.get("dropped_assignments"):
         log.info("dropped %d low-quality/duplicate assignment(s) for %s", note["dropped_assignments"], vid)
+    # Summarise-style models often fold assignment instructions into the prose
+    # instead of emitting them as items. When none came back, run a focused
+    # second pass over just the assignment-like paragraphs.
+    if not note.get("assignments") and ctx.cfg.get_bool("notes.assignment_second_pass", True):
+        try:
+            extra = notes.extract_assignments(ctx.client, ctx.cfg, video, text)
+        except Exception as exc:  # noqa: BLE001 - never lose the note over this
+            log.warning("assignment second pass error for %s: %s", vid, exc)
+            extra = []
+        added = notes.merge_assignments(note, extra)
+        if added:
+            log.info("assignment second pass added %d tugas for %s", added, vid)
+        else:
+            log.info(
+                "assignment second pass found nothing new for %s (raw keys: %s)",
+                vid,
+                ", ".join(sorted(raw)) if isinstance(raw, dict) else "-",
+            )
 
     record = dict(video)
     record.update(

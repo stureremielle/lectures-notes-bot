@@ -457,6 +457,74 @@ class TestSchemaDrift(unittest.TestCase):
             self.assertIn("foo", Path(path).read_text(encoding="utf-8"))
 
 
+class TestAssignmentSecondPass(unittest.TestCase):
+    """A summary-style model may fold assignments into prose; pass two recovers them."""
+
+    TRANSCRIPT = "\n\n".join(
+        [
+            "[0:01:00] Selamat pagi, kita mulai dengan kontrak kuliah.",
+            "[0:05:00] Materi minggu pertama membahas manajer dan keputusan.",
+            "[0:16:27] Rangkuman dibuat dalam bentuk paper ukuran A4, buat dua PPT.",
+            "[0:17:58] Kelompok satu membahas poin satu sampai tiga.",
+            "[0:22:00] Manajer adalah pihak yang mengatur sumber daya.",
+            "[0:55:05] Sebelum minggu ketiga tugasnya dikumpulkan lewat Google Drive.",
+        ]
+    )
+
+    def test_context_selection(self):
+        ctx = notes.select_assignment_context(self.TRANSCRIPT, max_chars=4000)
+        self.assertIn("paper ukuran A4", ctx)
+        self.assertIn("Google Drive", ctx)
+        self.assertIn("Kelompok satu", ctx)
+        self.assertNotIn("kontrak kuliah", ctx)  # unrelated paragraph dropped
+
+    def test_extract_and_merge(self):
+        from src.config import Config
+
+        class FakeClient:
+            def complete_json(self, system, user, max_tokens=None, temperature=None):
+                self.seen = user
+                return {
+                    "assignments": [
+                        {
+                            "text": "Tugas kelompok: paper A4 dan dua PPT",
+                            "type": "tugas",
+                            "due_date": "2026-10-10",
+                            "due_text": "maksimal 10 Oktober 2026",
+                            "confidence": "high",
+                            "timestamp": "0:16:27",
+                        }
+                    ]
+                }
+
+        client = FakeClient()
+        cfg = Config({"notes": {"assignment_context_chars": 4000}})
+        video = {"id": "v1", "title": "SPK M1", "course": "Sistem Penunjang Keputusan"}
+        extra = notes.extract_assignments(client, cfg, video, self.TRANSCRIPT)
+        self.assertEqual(len(extra), 1)
+        self.assertEqual(extra[0]["due_date"], "2026-10-10")
+        self.assertIn("Google Drive", client.seen)
+
+        note = {"assignments": []}
+        self.assertEqual(notes.merge_assignments(note, extra), 1)
+        # Merging again must not duplicate.
+        self.assertEqual(notes.merge_assignments(note, extra), 0)
+        self.assertEqual(len(note["assignments"]), 1)
+
+    def test_extract_empty_when_no_cues(self):
+        from src.config import Config
+
+        class Boom:
+            def complete_json(self, *a, **k):
+                raise AssertionError("must not call the LLM without assignment cues")
+
+        cfg = Config({})
+        self.assertEqual(
+            notes.extract_assignments(Boom(), cfg, {"course": "X"}, "[0:01] halo semuanya"),
+            [],
+        )
+
+
 class TestReminders(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

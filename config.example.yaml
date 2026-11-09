@@ -34,6 +34,12 @@ notes:
   condense: true
   condense_chunk_chars: 18000
   hard_cap_chars: 120000
+  # Summarising models sometimes fold assignment instructions into the prose
+  # and return an empty list. When that happens, a focused second call reads
+  # only the paragraphs that mention tugas/kelompok/paper/deadline (a few
+  # thousand tokens) and extracts them properly.
+  assignment_second_pass: true
+  assignment_context_chars: 12000
 
 reminders:
   # ALL date math uses this zone. WITA — not WIB.
