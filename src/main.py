@@ -302,6 +302,7 @@ def scan_playlist(
     limit: Optional[int] = None,
     force: bool = False,
     seen: bool = False,
+    order: Optional[str] = None,
 ) -> dict:
     """Enumerate a playlist, apply baseline rules, process new videos.
 
@@ -341,7 +342,7 @@ def scan_playlist(
     # of today's batch is the lecture whose transcript next week's session
     # builds on. Older videos in `skipped` are never touched automatically.
     videos = playlist.oldest_first(videos)
-    order_new_first = ctx.cfg.get_str("watch.backfill_order", "oldest").lower().startswith("new")
+    order_new_first = (order or ctx.cfg.get_str("watch.backfill_order", "oldest")).lower().startswith("new")
 
     backfill = ctx.cfg.get_bool("watch.backfill_on_first_run", False)
     known_playlist = ctx.state.has_baseline(url)
@@ -452,11 +453,14 @@ def run_playlists(
     limit: Optional[int],
     force: bool,
     seen: bool = False,
+    order: Optional[str] = None,
 ) -> list[dict]:
     results = []
     for entry in entries:
         try:
-            results.append(scan_playlist(ctx, entry, limit=limit, force=force, seen=seen))
+            results.append(
+                scan_playlist(ctx, entry, limit=limit, force=force, seen=seen, order=order)
+            )
         except Exception as exc:  # noqa: BLE001 - continue with the next playlist
             log.error("playlist %s crashed: %s", entry.get("name"), exc)
             log.debug(traceback.format_exc())
@@ -482,7 +486,9 @@ def cmd_run(args) -> int:
         args.dry_run,
         args.no_discord,
     )
-    results = run_playlists(ctx, entries, limit=args.limit, force=args.force)
+    results = run_playlists(
+        ctx, entries, limit=args.limit, force=args.force, order=getattr(args, "order", None)
+    )
     total = sum(r.get("processed", 0) for r in results)
     failed = sum(r.get("failed", 0) for r in results)
     log.info("run finished: %d processed, %d failed", total, failed)
@@ -651,9 +657,10 @@ def cmd_watch(args) -> int:
         log.warning("no playlists configured yet; the loop keeps running and will pick them up after an edit")
     send_time = ctx.cfg.send_time()
     log.info(
-        "watch: schedule %s (%s), send_time %s, %d playlist(s)",
+        "watch: cek playlist %s (%s), pengingat dikirim pada tick %s (send_time %s), %d playlist(s)",
         ", ".join(schedule),
         ctx.cfg.timezone_name,
+        ctx.cfg.send_tick() or "-",
         send_time.strftime("%H:%M"),
         len(entries),
     )
@@ -695,6 +702,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--playlist", help="only this playlist URL")
     p_run.add_argument("--all", action="store_true", help="all configured playlists")
     p_run.add_argument("--limit", type=int, default=None, help="max videos per playlist")
+    p_run.add_argument(
+        "--order",
+        choices=["oldest", "newest"],
+        default=None,
+        help="which lectures --limit picks (default: watch.backfill_order)",
+    )
     p_run.add_argument("--force", action="store_true", help="reprocess everything (incl. baseline videos)")
     p_run.add_argument("--no-discord", action="store_true", help="do not post to Discord")
     p_run.add_argument("--dry-run", action="store_true", help="print what would be posted, change nothing")

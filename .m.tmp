@@ -1,0 +1,15 @@
+﻿watch: scan three times a day, name the reminder tick, --order for catch-ups
+
+When does it look for new lectures? At container start, then at every
+watch.run_at_local tick. With one 19:00 tick a lecture uploaded at 09:00
+waited ~34h; the default is now [07:00, 13:00, 19:00] (yt-dlp flat scan,
+no LLM unless something is new).
+
+send_time_local no longer has to precede the first tick: reminders go out
+on the first tick at or after it, so send_time_local 14:00 + the ticks
+above means the 19:00 tick posts them. The validation warning now only
+fires when no tick can ever send a reminder, and the watch log names the
+tick that will.
+
+run --order oldest|newest selects which lectures --limit picks, so a
+catch-up of just the newest uploads no longer needs a config edit.

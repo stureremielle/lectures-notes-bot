@@ -54,12 +54,10 @@ reminders:
   # Used only when window_days is 0: exact offsets (1 = T-1, 0 = T-0).
   days_before: [1]
 
-  # Earliest time of day the reminder pass may send (WITA).
-  # IMPORTANT: this MUST be earlier than the first entry of
-  # `watch.run_at_local`, otherwise the tick that should send the reminder
-  # runs after the window opened and nothing fires on time. With the default
-  # 19:00 tick, keep this at 08:00 so the 19:00 tick does the sending.
-  send_time_local: "08:00"
+  # Earliest time of day the reminder pass may send (WITA). Reminders go out on
+  # the first tick at or after this time; with the ticks above, 14:00 means the
+  # 19:00 tick is the one that posts them.
+  send_time_local: "14:00"
 
   # Ping attached to every reminder: "@everyone", "@here", "role:<id>", or ""
   # to disable. Discord needs it in allowed_mentions, which the bot handles.
@@ -67,11 +65,13 @@ reminders:
 
 watch:
   # "HH:MM" (string) or a list. Interpreted in reminders.timezone.
-  #   one tick  : "19:00"          -> T-0 fires ~5h before a midnight deadline
-  #   two ticks : ["07:00", "19:00"] -> much more notice at near-zero cost
-  #               (the second tick only re-scans the playlist; only new
-  #               uploads reach the LLM)
-  run_at_local: "19:00"
+  # Every tick re-scans the playlist (cheap, no LLM unless a video is new), so
+  # more ticks means a lecture uploaded this morning is picked up the same day.
+  # The broadcast schedule publishes lectures around 08:00-15:00, so:
+  #   07:00  catch anything uploaded overnight
+  #   13:00  catch a lecture uploaded this morning
+  #   19:00  catch the afternoon uploads + send the reminders
+  run_at_local: ["07:00", "13:00", "19:00"]
 
   # Videos in this playlist that must never be processed (wrong uploads,
   # announcements, group-presentation clips, ...).

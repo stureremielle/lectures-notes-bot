@@ -923,11 +923,21 @@ class TestConfig(unittest.TestCase):
             "Testing dan Implementasi Sistem",
         )
 
-    def test_send_time_warning(self):
-        cfg = Config({"reminders": {"send_time_local": "20:00"}, "watch": {"run_at_local": "19:00"},
-                      "llm": {"api_key": "x"}, "discord": {"notes_webhook": "https://x", "calendar_webhook": "https://y"}})
-        warns = cfg.validate_for_run()
-        self.assertTrue(any("send_time_local" in w for w in warns))
+    def test_send_time_warning_only_when_no_tick_can_send(self):
+        base = {"llm": {"api_key": "x"},
+                "discord": {"notes_webhook": "https://x", "calendar_webhook": "https://y"}}
+        # Later than every tick -> never fires -> warn
+        bad = Config({**base, "reminders": {"send_time_local": "20:00"},
+                      "watch": {"run_at_local": "19:00"}})
+        self.assertTrue(any("never fire" in w for w in bad.validate_for_run()))
+        # Several ticks, send_time between them -> fine, and it names the tick
+        ok = Config({**base, "reminders": {"send_time_local": "14:00"},
+                     "watch": {"run_at_local": ["07:00", "13:00", "19:00"]}})
+        self.assertEqual(ok.validate_for_run(), [])
+        self.assertEqual(ok.send_tick(), "19:00")
+        early = Config({**base, "reminders": {"send_time_local": "08:00"},
+                        "watch": {"run_at_local": ["07:00", "13:00", "19:00"]}})
+        self.assertEqual(early.send_tick(), "13:00")
 
 
 class TestCalendar(unittest.TestCase):

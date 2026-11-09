@@ -316,6 +316,18 @@ class Config(Section):
         days = self.schedule().get(str(course or "").strip())
         return days[0] if days else None
 
+    def send_tick(self) -> Optional[str]:
+        """Which run_at_local entry will actually send the reminders."""
+        try:
+            times = self.watch_times()
+        except ConfigError:
+            return None
+        send = self.send_time()
+        for hhmm in times:
+            if parse_hhmm(hhmm) >= send:
+                return hhmm
+        return None
+
     def validate_for_run(self) -> list[str]:
         """Return a list of human-readable warnings (never raises for content)."""
         warns: list[str] = []
@@ -324,13 +336,15 @@ class Config(Section):
         except ConfigError as exc:
             return [str(exc)]
         send = self.send_time()
-        if times and send >= parse_hhmm(times[0]):
+        # Reminders go out on the first tick at or after send_time_local. With
+        # several ticks a day that is a choice, not a mistake — only warn when
+        # no tick can ever send them.
+        if times and send > parse_hhmm(times[-1]):
             warns.append(
                 "reminders.send_time_local "
-                f"({send.strftime('%H:%M')}) is not earlier than the first "
-                f"watch.run_at_local entry ({times[0]}); reminders will fire late "
-                "or on the following tick only. Set send_time_local earlier "
-                "(e.g. 08:00 for a 19:00 tick)."
+                f"({send.strftime('%H:%M')}) is later than every watch.run_at_local entry "
+                f"(last: {times[-1]}); reminders will never fire. "
+                "Set send_time_local to a time before one of the ticks."
             )
         if not self.get_str("llm.api_key"):
             warns.append("llm.api_key is empty (set OPENAI_API_KEY or llm.api_key).")
