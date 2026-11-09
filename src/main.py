@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import logging
+import os
 import sys
 import time
 import traceback
@@ -698,13 +699,35 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def container_config_report() -> str:
+    """One-line diagnosis of /app/config.yaml + /app/data, for failed starts."""
+    cfg_path = Path(os.environ.get("LECTURE_BOT_CONFIG", "/app/config.yaml"))
+    data_dir = Path("/app/data")
+    bits = [f"config={cfg_path} " + (
+        "DIRECTORY (host file missing)" if cfg_path.is_dir()
+        else "file ok" if cfg_path.is_file()
+        else "missing"
+    )]
+    bits.append(f"data={data_dir} " + ("writable" if os.access(data_dir, os.W_OK) else "NOT writable"))
+    env_keys = [k for k in ("OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL",
+                            "DISCORD_NOTES_WEBHOOK", "DISCORD_CALENDAR_WEBHOOK") if os.environ.get(k)]
+    bits.append(f"secrets={len(env_keys)}/5 present")
+    return "; ".join(bits)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
         return int(args.func(args) or EXIT_OK)
     except ConfigError as exc:
-        print(f"config error: {exc}", file=sys.stderr)
+        # A misconfigured container would otherwise restart-loop with a one-line
+        # fatal message in the json log; print the full diagnosis ONCE and exit.
+        log.error("config error — %s", exc)
+        log.error(
+            "container configuration: %s",
+            container_config_report(),
+        )
         return EXIT_ERROR
     except KeyboardInterrupt:
         return EXIT_OK
