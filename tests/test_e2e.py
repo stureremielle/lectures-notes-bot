@@ -280,7 +280,12 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("vid0000000", processed)
         self.assertIn(PLAYLIST_URL, data["baselines"])
         self.assertEqual(len(record["note"]["assignments"]), 1)
-        self.assertIsNone(record["note"]["assignments"][0]["due_date"])
+        assignment = record["note"]["assignments"][0]
+        # "minggu depan" said in a lecture dated 2026-09-28 -> due 2026-10-05,
+        # and flagged as inferred rather than invented.
+        self.assertEqual(assignment["due_date"], "2026-10-05")
+        self.assertTrue(assignment["due_date_inferred"])
+        self.assertEqual(assignment["due_text"], "minggu depan")
         records = list(data["videos"].values())
         self.assertEqual(records[0]["course"], "Peminatan Tes")  # alias -> course, not playlist label
         self.assertEqual(records[0]["title"], "PEM M1 2026 09 28 - Heap")

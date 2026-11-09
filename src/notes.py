@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
-from . import prompts
+from . import prompts, relativedates
 from .logging_setup import get_logger
 from .timeutil import WITA, format_date_id, parse_date
 
@@ -246,7 +246,12 @@ def normalise_tags(raw: Any) -> list[str]:
     return tags[:8]
 
 
-def normalise_assignment(item: Any, course: str, video: dict) -> Optional[dict]:
+def normalise_assignment(
+    item: Any,
+    course: str,
+    video: dict,
+    resolve_relative: bool = True,
+) -> Optional[dict]:
     if isinstance(item, str):
         item = {"text": item}
     if not isinstance(item, dict):
@@ -259,6 +264,23 @@ def normalise_assignment(item: Any, course: str, video: dict) -> Optional[dict]:
     due_raw = item.get("due_date") or item.get("due") or item.get("deadline")
     due_date = parse_date(due_raw)
     due_text = _clean_markers(_as_text(item.get("due_text") or item.get("due_note"))) or None
+    due_inferred = False
+    due_rule = None
+    # No explicit calendar date, but the lecturer said something like "minggu
+    # depan": resolve it against the lecture's own date (the class day).
+    if due_date is None and resolve_relative and due_text:
+        anchor = relativedates.anchor_date(video)
+        if anchor is not None:
+            inferred, rule = relativedates.resolve_relative_date(due_text, anchor)
+            if inferred is not None:
+                due_date, due_inferred, due_rule = inferred, True, rule
+                log.info(
+                    "due date '%s' -> %s (%s, kuliah %s)",
+                    due_text,
+                    inferred.isoformat(),
+                    rule,
+                    anchor.isoformat(),
+                )
     confidence = str(item.get("confidence") or "medium").strip().lower()
     if confidence not in _CONFIDENCE:
         confidence = "medium"
@@ -271,6 +293,8 @@ def normalise_assignment(item: Any, course: str, video: dict) -> Optional[dict]:
         "type": atype,
         "due_date": due_date.isoformat() if due_date else None,
         "due_text": due_text or None,
+        "due_date_inferred": due_inferred,
+        "due_rule": due_rule,
         "confidence": confidence,
         "timestamp": timestamp or None,
         "course": course,
@@ -408,7 +432,12 @@ def extract_assignments(client, cfg, video: dict, transcript: str) -> list[dict]
     out: list[dict] = []
     seen: set[str] = set()
     for item in raw_items:
-        norm = normalise_assignment(item, _course_of(video), video)
+        norm = normalise_assignment(
+            item,
+            _course_of(video),
+            video,
+            resolve_relative=cfg.get_bool("assignments.resolve_relative_dates", True),
+        )
         if norm is None or norm["key"] in seen:
             continue
         seen.add(norm["key"])
@@ -438,7 +467,7 @@ def merge_assignments(note: dict, extra: list[dict]) -> int:
     return added
 
 
-def normalise(raw: Optional[dict], video: dict) -> Optional[dict]:
+def normalise(raw: Optional[dict], video: dict, cfg=None) -> Optional[dict]:
     """Turn the model's JSON into the canonical note record. None if unusable.
 
     Tolerant by design: models drift from the requested schema and some answer
@@ -470,10 +499,11 @@ def normalise(raw: Optional[dict], video: dict) -> Optional[dict]:
         assignments_raw = [assignments_raw]
     if not isinstance(assignments_raw, list):
         assignments_raw = []
+    resolve_relative = True if cfg is None else cfg.get_bool("assignments.resolve_relative_dates", True)
     assignments: list[dict] = []
     seen: set[str] = set()
     for item in assignments_raw:
-        norm = normalise_assignment(item, course, video)
+        norm = normalise_assignment(item, course, video, resolve_relative=resolve_relative)
         if norm is None:
             continue
         if norm["key"] in seen:
@@ -538,7 +568,10 @@ def _render_assignment_line(a: dict) -> str:
     bits: list[str] = [f"- {text}"]
     meta: list[str] = [f"jenis: {a.get('type') or 'tugas'}"]
     if a.get("due_date"):
-        meta.append(f"tenggat: {format_date_id(parse_date(a['due_date']))}")
+        due = f"tenggat: {format_date_id(parse_date(a['due_date']))}"
+        if a.get("due_date_inferred"):
+            due += f" (ditafsirkan dari \u201c{a.get('due_text')}\u201d)"
+        meta.append(due)
     elif a.get("due_text"):
         meta.append(f"tenggat: {a['due_text']} (belum dipastikan)")
     else:

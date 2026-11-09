@@ -170,7 +170,7 @@ def process_video(ctx: Context, video: dict, playlist_name: str, limit_hit: bool
     except LLMError as exc:
         log.error("LLM failed for %s: %s", vid, exc)
         return None
-    note = notes.normalise(raw, video)
+    note = notes.normalise(raw, video, ctx.cfg)
     if note is None:
         saved = notes.dump_unusable(ctx.cfg.cache_dir, vid, raw)
         log.error(

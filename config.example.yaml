@@ -102,6 +102,13 @@ pipeline:
   # Course label when the video title gives no clue at all.
   course_fallback: "Lainnya"
 
+assignments:
+  # "minggu depan" said in a Monday lecture -> due the following Monday. The
+  # anchor is the lecture's own date (upload date, or the date in the title
+  # such as "SPK M1 2026 09 28"), so no class schedule needs to be configured.
+  # Resolved dates are labelled as inferred in the notes and reminders.
+  resolve_relative_dates: true
+
 paths:
   data_dir: "data"
   state_file: "data/state.json"

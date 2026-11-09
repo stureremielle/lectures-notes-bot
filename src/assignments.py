@@ -120,7 +120,10 @@ def assignment_id(item: dict) -> str:
 def due_label(item: dict) -> str:
     d = parse_date(item.get("due_date"))
     if d:
-        return f"{format_date_id(d)} (23.59 WITA)"
+        label = f"{format_date_id(d)} (23.59 WITA)"
+        if item.get("due_date_inferred"):
+            label += f" · ditafsirkan dari \u201c{item.get('due_text')}\u201d"
+        return label
     text = item.get("due_text")
     if text:
         return f"{text} (tenggat belum dipastikan)"
@@ -225,6 +228,11 @@ def render_reminder(item: dict, offset: int, today: _dt.date, mention: str = "")
     if d:
         lines.append(f"Tenggat: **{format_date_id(d)}** pukul 23.59 WITA")
         lines.append(f"_{d.isoformat()} · sisa {(d - today).days} hari_")
+        if item.get("due_date_inferred"):
+            lines.append(
+                f"_Tanggal ditafsirkan dari ucapan dosen \u201c{item.get('due_text')}\u201d "
+                f"pada tanggal kuliah._"
+            )
     elif item.get("due_text"):
         lines.append(f"Tenggat menurut dosen: **{item['due_text']}** (tanggal belum dipastikan)")
     if item.get("video_url"):

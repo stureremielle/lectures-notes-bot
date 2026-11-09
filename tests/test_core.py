@@ -578,6 +578,79 @@ class TestCalendarFlags(unittest.TestCase):
         self.assertEqual(cfg.reminder_days_before(), [1])
 
 
+class TestRelativeDueDates(unittest.TestCase):
+    """'minggu depan' spoken at a Monday lecture means the following Monday."""
+
+    MONDAY = dt.date(2026, 9, 28)  # SPK M1
+
+    def test_phrases(self):
+        from src.relativedates import resolve_relative_date
+
+        cases = {
+            "minggu depan": dt.date(2026, 10, 5),
+            "minggu depan kalian kerjakan": dt.date(2026, 10, 5),
+            "dua minggu lagi": dt.date(2026, 10, 12),
+            "2 minggu ke depan": dt.date(2026, 10, 12),
+            "tiga pekan kemudian": dt.date(2026, 10, 19),
+            "besok": dt.date(2026, 9, 29),
+            "lusa": dt.date(2026, 9, 30),
+            "senin depan": dt.date(2026, 10, 5),
+            "akhir bulan": dt.date(2026, 9, 30),
+        }
+        for phrase, expected in cases.items():
+            got, rule = resolve_relative_date(phrase, self.MONDAY)
+            self.assertEqual(got, expected, f"{phrase} -> {got} ({rule})")
+
+    def test_ambiguous_phrases_stay_null(self):
+        from src.relativedates import resolve_relative_date
+
+        for phrase in ("minggu ketiga", "minggu ke-3", "minggu ini", "akhir minggu ini", ""):
+            got, _ = resolve_relative_date(phrase, self.MONDAY)
+            self.assertIsNone(got, phrase)
+
+    def test_weekday_said_on_that_day_is_next_week(self):
+        from src.relativedates import resolve_relative_date
+
+        got, _ = resolve_relative_date("hari senin", self.MONDAY)
+        self.assertEqual(got, dt.date(2026, 10, 5))
+
+    def test_notes_mark_the_date_as_inferred(self):
+        from src.config import Config
+
+        cfg = Config({"assignments": {"resolve_relative_dates": True}})
+        video = {"id": "v", "title": "SPK M1 2026 09 28", "upload_date": "20260928"}
+        raw = {
+            "summary": "S.",
+            "assignments": [
+                {"text": "Tugas kelompok", "due_date": None, "due_text": "minggu depan", "confidence": "high"}
+            ],
+        }
+        note = notes.normalise(raw, video, cfg)
+        item = note["assignments"][0]
+        self.assertEqual(item["due_date"], "2026-10-05")
+        self.assertTrue(item["due_date_inferred"])
+        body = notes.render_notes_body(note)
+        self.assertIn("5 Oktober 2026", body)
+        self.assertIn("ditafsirkan", body)
+
+    def test_can_be_disabled(self):
+        from src.config import Config
+
+        cfg = Config({"assignments": {"resolve_relative_dates": False}})
+        video = {"id": "v", "title": "SPK M1 2026 09 28", "upload_date": "20260928"}
+        raw = {"summary": "S.", "assignments": [{"text": "Tugas", "due_text": "minggu depan"}]}
+        note = notes.normalise(raw, video, cfg)
+        self.assertIsNone(note["assignments"][0]["due_date"])
+
+    def test_no_anchor_no_date(self):
+        from src.config import Config
+
+        cfg = Config({"assignments": {"resolve_relative_dates": True}})
+        raw = {"summary": "S.", "assignments": [{"text": "Tugas", "due_text": "minggu depan"}]}
+        note = notes.normalise(raw, {"id": "v", "title": "tanpa tanggal"}, cfg)
+        self.assertIsNone(note["assignments"][0]["due_date"])
+
+
 class TestReminders(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

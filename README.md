@@ -141,7 +141,6 @@ Tidak ada header lain: tidak ada tabel definisi, tidak ada bagian rumus, tidak
 ada soal review.
 
 ### Channel `#calendar`
-
 Default: **pengingat saja** — satu pesan berisi ping saat ada tenggat **besok**
 (T-1), lengkap dengan mata kuliah, tanggal, dan menit transkrip sumbernya.
 
@@ -170,6 +169,31 @@ Yang bisa dinyalakan kembali kapan saja:
 > Catatan: dengan satu kali tick 19:00, pengingat T-1 keluar **19:00 sehari
 > sebelumnya** (≈29 jam sebelum tenggat 23.59 WITA).
 
+### Tenggat relatif: "minggu depan" → tanggal nyata
+
+Dosen jarang menyebut tanggal; mereka bilang *"minggu depan"*. Karena video
+kuliah membawa **tanggal kelas** (upload date, atau tanggal di judul seperti
+`SPK M1 2026 09 28`), frasa itu bisa dihitung:
+
+| Ucapan | Kuliah Senin 28 Sep 2026 |
+|---|---|
+| minggu depan | Senin, 5 Okt 2026 |
+| dua minggu lagi / 2 minggu ke depan | Senin, 12 Okt 2026 |
+| tiga pekan kemudian | Senin, 19 Okt 2026 |
+| besok / lusa | 29 Sep / 30 Sep 2026 |
+| senin depan, hari senin | Senin, 5 Okt 2026 (hari yang sama → minggu berikutnya) |
+| akhir bulan | 30 Sep 2026 |
+| **minggu ketiga**, minggu ini, akhir minggu ini | **tetap `null`** (ambigu) |
+
+Tidak perlu mengisi jadwal kuliah: patokannya tanggal video itu sendiri. Tanggal
+hasil hitungan **ditandai** di catatan dan pengingat:
+
+> Tenggat: **Senin, 5 Oktober 2026** pukul 23.59 WITA
+> _Tanggal ditafsirkan dari ucapan dosen "minggu depan" pada tanggal kuliah._
+
+Matikan dengan `assignments.resolve_relative_dates: false` bila ingin semua
+tanggal relatif tetap `null`.
+
 ---
 
 ## Aturan yang tidak bisa dilanggar
@@ -180,7 +204,7 @@ Yang bisa dinyalakan kembali kapan saja:
 | Istilah teknis tetap Inggris | heap, hash table, big-O, deadlock, thread, pointer … (boleh diberi padanan) |
 | Tidak mengarang isi visual | `prompts/notes_system.md` melarangnya; hal tak jelas ditandai `(tidak jelas di transkrip)` |
 | Konservatif soal tugas | maksimal 10 per kuliah; ragu → hilangkan atau `confidence: low` |
-| Tidak pernah mengarang tanggal | "minggu depan" → `due_date: null`, teks aslinya masuk `due_text` |
+| Tidak mengarang tanggal | Tanggal eksplisit dipakai apa adanya; "minggu depan" ditafsirkan dari **tanggal kuliah** dan **ditandai** sebagai tafsiran |
 | WITA, bukan WIB | `ZoneInfo("Asia/Makassar")`, semua date math lewat `reminders.timezone` |
 | Pesan ≤ 1900 karakter | `discord_webhook.split_message`, potong di batas baris, balok kode ditutup & dibuka ulang |
 | LLM tidak boleh mematikan proses | retry 429/5xx + backoff, JSON toleran, video gagal → lanjut |
