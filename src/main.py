@@ -38,8 +38,16 @@ EXIT_ERROR = 1
 class Context:
     """Everything the commands need, built once from the config."""
 
-    def __init__(self, cfg: Config, dry_run: bool = False, no_discord: bool = False):
+    def __init__(
+        self,
+        cfg: Config,
+        dry_run: bool = False,
+        no_discord: bool = False,
+        reload_config: bool = False,
+    ):
         self.cfg = cfg
+        # Only the long-running watcher re-reads config.yaml between ticks.
+        self.reload_config = reload_config
         self.dry_run = dry_run
         self.no_discord = no_discord
         self.tz = get_tz(cfg.timezone_name)
@@ -73,7 +81,7 @@ class Context:
         return _dt.datetime.now(self.tz)
 
 
-def build_context(args) -> Context:
+def build_context(args, reload_config: bool = False) -> Context:
     cfg = load_config(getattr(args, "config", None))
     setup_logging(cfg.get_str("logging.level", "INFO"))
     for warning in cfg.validate_for_run():
@@ -81,7 +89,12 @@ def build_context(args) -> Context:
     # Dry-run previews show payloads; keep the log readable.
     if getattr(args, "dry_run", False):
         logging.getLogger("discord").setLevel(logging.WARNING)
-    return Context(cfg, dry_run=getattr(args, "dry_run", False), no_discord=getattr(args, "no_discord", False))
+    return Context(
+        cfg,
+        dry_run=getattr(args, "dry_run", False),
+        no_discord=getattr(args, "no_discord", False),
+        reload_config=reload_config,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +136,7 @@ def process_video(ctx: Context, video: dict, playlist_name: str, limit_hit: bool
     video["course"] = course
     url = video.get("webpage_url") or video.get("url")
     vid = video.get("id")
-    log.info("processing: %s [%s / %s] — %s", vid, playlist_name, course, video.get("title") or url)
+    log.info("processing: %s [%s / %s] — %s", vid or "?", playlist_name, course, video.get("title") or url)
     try:
         text, meta = transcript.build_transcript(url)
     except transcript.TranscriptError as exc:
@@ -132,6 +145,9 @@ def process_video(ctx: Context, video: dict, playlist_name: str, limit_hit: bool
     except Exception as exc:  # noqa: BLE001 - one bad video must not kill the run
         log.warning("transcript error for %s: %s", vid, exc)
         return None
+    if not vid and meta.get("video_id"):
+        vid = meta["video_id"]
+        video["id"] = vid
     if meta.get("title") and not video.get("title"):
         video["title"] = meta["title"]
         course = courses.resolve_course(
@@ -282,14 +298,31 @@ def scan_playlist(
     for v in videos:
         v["playlist_url"] = url
         v["playlist_title"] = name
-
     if not videos and not force:
         return result
 
+    # Videos that must never be processed (wrong uploads, announcements, ...).
+    ignored = {str(x) for x in ctx.cfg.get_list("watch.ignore_ids", [])}
+    if ignored:
+        dropped = [v for v in videos if v["id"] in ignored]
+        videos = [v for v in videos if v["id"] not in ignored]
+        if dropped:
+            log.info("%s: ignoring %d video(s) from watch.ignore_ids", name, len(dropped))
+
+    # The daily run processes only brand-new uploads, oldest first: the oldest
+    # of today's batch is the lecture whose transcript next week's session
+    # builds on. Older videos in `skipped` are never touched automatically.
+    videos = playlist.oldest_first(videos)
+    order_new_first = ctx.cfg.get_str("watch.backfill_order", "oldest").lower().startswith("new")
+
     backfill = ctx.cfg.get_bool("watch.backfill_on_first_run", False)
     known_playlist = ctx.state.has_baseline(url)
+    catch_up = bool(force) and limit is not None
 
     # --dry-run must not change anything: no baseline stamp, no skip list.
+    # The baseline pass runs ONLY when this playlist has never been seen; a
+    # slide of history left by a --force --limit catch-up must never be picked
+    # up as "new uploads" by the next plain run.
     if ctx.dry_run and not known_playlist:
         log.info(
             "%s: first encounter — normally the baseline would be stamped and all %d "
@@ -300,41 +333,77 @@ def scan_playlist(
         )
         candidates = videos[:limit] if limit else []
     elif force:
-        # Re-stamp the baseline so the daily loop stays incremental afterwards.
+        # A forced run re-stamps the baseline and processes what it was asked
+        # for. Anything it did NOT process becomes known history immediately,
+        # otherwise the next plain run would treat it as a new upload and spend
+        # tokens on it.
         ctx.state.stamp_baseline(url, ctx.now())
-        candidates = videos
-        if limit is not None:
-            # Everything beyond --limit is current history, not a new upload.
-            skipped_now = [v["id"] for v in videos[limit:] if not ctx.state.has_video(v["id"])]
-            ctx.state.mark_skipped(skipped_now)
-            candidates = videos[:limit]
+        candidates = (playlist.newest_first(videos) if (order_new_first and limit) else videos)
+        chosen = candidates[:limit] if limit is not None else candidates
+        left_over = [v["id"] for v in candidates if v not in chosen]
+        if left_over:
+            ctx.state.mark_skipped(left_over)
+            log.info(
+                "%s: --force --limit %d — %d lecture(s) left as known history (%s)",
+                name,
+                limit,
+                len(left_over),
+                ", ".join(left_over[:8]),
+            )
+        candidates = chosen
     elif not known_playlist:
-        # First encounter: no history backfill. Zero LLM calls.
+        # True first encounter (also the --force catch-up path): no history
+        # backfill unless explicitly asked. Zero LLM calls by default.
         ctx.state.stamp_baseline(url, ctx.now())
+        # Every current video becomes known history right away, so nothing is
+        # ever picked up later by accident.
+        ctx.state.mark_skipped([v["id"] for v in videos])
+        ctx.state.save()
         if backfill:
-            ctx.state.save()
             log.info(
                 "%s: first run with backfill_on_first_run=true — processing %d existing video(s)",
                 name,
                 len(videos),
             )
-            candidates = videos
+            candidates = videos[:limit] if limit is not None else videos
         else:
-            ctx.state.mark_skipped([v["id"] for v in videos])
-            ctx.state.save()
             result["baseline"] = True
             log.info("baseline stamped, skipping all %d existing videos (%s)", len(videos), name)
-            return result
+            if not catch_up:
+                log.info('%s: watch mode — existing videos stay skipped, waiting for new uploads', name)
+                return result
+            # Explicit catch-up on a slice: newest (or oldest) first, rest stays skipped.
+            candidates = (playlist.newest_first(videos) if order_new_first else videos)[:limit]
+            log.info(
+                "%s: catch-up on %d lecture(s) (%s first); %d remain skipped",
+                name,
+                len(candidates),
+                "newest" if order_new_first else "oldest",
+                len(videos) - len(candidates),
+            )
     else:
         candidates = [v for v in videos if _is_new(ctx, v)]
-        candidates = playlist.oldest_first(candidates)
+        if limit is not None and not ctx.dry_run and len(candidates) > limit:
+            # An explicit --limit on new uploads: keep the rest out of "new" so a
+            # later run does not silently pay for them; list them explicitly.
+            rest = candidates[limit:]
+            ctx.state.mark_skipped([v["id"] for v in rest])
+            ctx.state.save()
+            log.info(
+                "%s: --limit %d — %d other new video(s) marked as skipped (%s)",
+                name,
+                limit,
+                len(rest),
+                ", ".join(v["id"] for v in rest[:8]),
+            )
         if backfill:
             # Backfill only matters on the first encounter (handled above); later
             # runs stay incremental even with the flag on.
             log.info("backfill_on_first_run=true but baseline already exists; staying incremental")
 
-    if limit is not None and not ctx.dry_run:
-        candidates = candidates[:limit]
+    # NOTE: candidates are already limited inside each branch. A blanket
+    # `candidates[:limit]` here would turn a plain run into a processing run
+    # and spend tokens on history that the baseline said to skip.
     if not candidates:
         log.info("%s: no new videos (%d in playlist)", name, len(videos))
         return result
@@ -502,17 +571,18 @@ def run_tick(ctx: Context, force: bool) -> None:
     now = ctx.now()
     log.info("tick: %s (WITA)", now.strftime("%Y-%m-%d %H:%M:%S"))
     # The daily loop is long-lived: re-read the config every tick so edits (a
-    # filled-in playlist URL, a new schedule) apply without a restart. A bad
-    # file keeps the config this process started with.
-    try:
-        from .config import load_config
+    # filled-in playlist URL, a new schedule) apply without a restart. Only the
+    # watcher does this — a one-shot `run` must keep the config it was started
+    # with, otherwise playlist paths/settings can drift under it. A bad file
+    # keeps the config this process started with.
+    if ctx.reload_config:
+        try:
+            from .config import load_config
 
-        fresh = load_config(ctx.cfg.path)
-        ctx.cfg = fresh
-        entries = [p for p in fresh.playlists() if p.get("enabled", True)]
-    except Exception as exc:  # noqa: BLE001
-        log.warning("config reload failed (%s); using the previous config", exc)
-        entries = [p for p in ctx.cfg.playlists() if p.get("enabled", True)]
+            ctx.cfg = load_config(ctx.cfg.path)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("config reload failed (%s); using the previous config", exc)
+    entries = [p for p in ctx.cfg.playlists() if p.get("enabled", True)]
     try:
         reminders.run_reminder_pass(ctx.cfg, ctx.state, ctx.calendar_hook, now=now, force=force)
     except Exception as exc:  # noqa: BLE001 - a failing pass must not stop the loop
@@ -542,7 +612,7 @@ def wait_until(target: _dt.datetime, stop_check=lambda: False) -> None:
 
 
 def cmd_watch(args) -> int:
-    ctx = build_context(args)
+    ctx = build_context(args, reload_config=True)
     try:
         schedule = ctx.cfg.watch_times()
     except ConfigError as exc:

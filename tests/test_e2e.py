@@ -81,12 +81,12 @@ DRIVER = textwrap.dedent(
 
     def fake_enumerate(url, limit=None):
         return [
-            {{"id": "vid00000001", "title": "Pertemuan 1 - Heap", "url": "https://www.youtube.com/watch?v=vid00000001",
+            {{"id": "vid00000001", "title": "PEM M1 2026 09 28 - Heap", "url": "https://www.youtube.com/watch?v=vid00000001",
               "webpage_url": "https://www.youtube.com/watch?v=vid00000001", "duration": 1500,
-              "uploader": "Dosen", "upload_date": "20260901", "index": 1}},
-            {{"id": "vid00000002", "title": "Pertemuan 2 - Hash", "url": "https://www.youtube.com/watch?v=vid00000002",
+              "uploader": "Dosen", "upload_date": "20260928", "index": 1}},
+            {{"id": "vid00000002", "title": "PEM M2 2026 10 05 - Hash", "url": "https://www.youtube.com/watch?v=vid00000002",
               "webpage_url": "https://www.youtube.com/watch?v=vid00000002", "duration": 1500,
-              "uploader": "Dosen", "upload_date": "20260908", "index": 2}},
+              "uploader": "Dosen", "upload_date": "20261005", "index": 2}},
         ]
 
     playlist.enumerate_playlist = fake_enumerate
@@ -156,8 +156,9 @@ class EndToEnd(unittest.TestCase):
                   data_dir: "{self.dir.as_posix()}/data"
                   state_file: "{self.dir.as_posix()}/data/state.json"
                 playlists:
-                  - name: "Sistem Multimedia"
+                  - name: "PTA 2026/2027"
                     url: "{PLAYLIST_URL}"
+                    course_aliases: "PEM"
                   - name: "Sistem Terdistribusi"
                     url: "https://www.youtube.com/playlist?list=PLTEST999"
                 """
@@ -180,6 +181,7 @@ class EndToEnd(unittest.TestCase):
         return subprocess.run(
             [sys.executable, str(self.driver), "--config", str(self.dir / "config.yaml"), *args],
             cwd=str(ROOT),
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -229,7 +231,7 @@ class EndToEnd(unittest.TestCase):
             cfg = load_config({str(self.dir / 'config.yaml')!r})
             ctx = Context(cfg, dry_run=False, no_discord=True)
             ctx.client.complete_json = boom
-            res = scan_playlist(ctx, {{"name": "Sistem Multimedia", "url": {PLAYLIST_URL!r}}}, seen=True)
+            res = scan_playlist(ctx, {{"name": "PTA 2026/2027", "url": {PLAYLIST_URL!r}}}, seen=True)
             print("RESULT", res)
             """
         )
@@ -264,22 +266,39 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(MockLLM.calls, 0)
 
     def test_force_processes_and_rerun_is_idempotent(self):
+        # --force --limit 1 = "catch up on one lecture". The others stay skipped
+        # (not silently marked as seen), so nothing is posted twice later.
         res = self.cli("run", "--playlist", PLAYLIST_URL, "--force", "--limit", "1", "--no-discord")
         out = res.stdout + res.stderr
         self.assertEqual(res.returncode, 0, out)
         self.assertEqual(MockLLM.calls, 1)
         data = json.loads(self.state_path.read_text(encoding="utf-8"))
-        self.assertIn("vid00000001", data["videos"])
+        self.assertEqual(len(data["videos"]), 1)
+        processed = next(iter(data["videos"]))
+        record = data["videos"][processed]
+        self.assertIn("vid0000000", processed)
         self.assertIn(PLAYLIST_URL, data["baselines"])
-        self.assertEqual(len(data["videos"]["vid00000001"]["note"]["assignments"]), 1)
-        self.assertIsNone(data["videos"]["vid00000001"]["note"]["assignments"][0]["due_date"])
-        # Same video again without --force: never processed twice.
+        self.assertEqual(len(record["note"]["assignments"]), 1)
+        self.assertIsNone(record["note"]["assignments"][0]["due_date"])
+        records = list(data["videos"].values())
+        self.assertEqual(records[0]["course"], "PTA 2026/2027")  # PEM alias -> playlist label
+        self.assertEqual(records[0]["title"], "PEM M1 2026 09 28 - Heap")
+        # A plain run without --force must never touch the leftover history: no
+        # LLM call, no new note, state unchanged.
         MockLLM.calls = 0
+        before = json.loads(self.state_path.read_text(encoding="utf-8"))
         res2 = self.cli("run", "--playlist", PLAYLIST_URL, "--no-discord")
         self.assertEqual(MockLLM.calls, 0, res2.stdout + res2.stderr)
-        # --force truncated by --limit marks the rest as history, so the daily
-        # loop stays incremental: nothing new, nothing posted.
+        after = json.loads(self.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(list(after["videos"]), list(before["videos"]))
         self.assertIn("no new videos", res2.stdout + res2.stderr)
+        # A later forced catch-up is explicit: it processes a slice again and
+        # never silently pulls in leftover history (the plain run above proved
+        # the daily loop leaves it alone).
+        res3 = self.cli("run", "--playlist", PLAYLIST_URL, "--force", "--limit", "1", "--no-discord")
+        self.assertEqual(MockLLM.calls, 1, res3.stdout + res3.stderr)
+        data2 = json.loads(self.state_path.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(data2["videos"]), 1)
 
     def test_remind_dry_run_and_calendar_png(self):
         res = self.cli("run", "--playlist", PLAYLIST_URL, "--force", "--limit", "1", "--no-discord")

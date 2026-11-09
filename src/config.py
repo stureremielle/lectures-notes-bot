@@ -242,12 +242,22 @@ class Config(Section):
             url = str(entry.get("url") or "").strip()
             if not name and not url:
                 continue
+            aliases = entry.get("course_aliases")
+            if isinstance(aliases, dict):
+                # name: [aliases]
+                pairs = [
+                    f"{course}: {', '.join(a if isinstance(a, str) else str(a) for a in (lst or []))}"
+                    for course, lst in aliases.items()
+                ]
+                aliases = "; ".join(pairs)
+            elif isinstance(aliases, list):
+                aliases = ", ".join(str(a) for a in aliases)
             result.append(
                 {
                     "name": name or url,
                     "url": url,
                     "max_videos": entry.get("max_videos"),
-                    "course_aliases": str(entry.get("course_aliases") or ""),
+                    "course_aliases": str(aliases or ""),
                     "enabled": bool(entry.get("enabled", True)),
                 }
             )

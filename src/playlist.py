@@ -177,6 +177,19 @@ def oldest_first(videos: list[dict]) -> list[dict]:
     return dated + undated
 
 
+def newest_first(videos: list[dict]) -> list[dict]:
+    """Latest upload first; undated videos keep their playlist order last."""
+    dated = [v for v in videos if upload_date_of(v)]
+    undated = [v for v in videos if not upload_date_of(v)]
+    dated.sort(key=lambda v: (upload_date_of(v) or "", int(v.get("index") or 0)), reverse=True)
+    undated.sort(key=lambda v: int(v.get("index") or 0))
+    return dated + undated
+
+
+def order_by(videos: list[dict], order: str = "oldest") -> list[dict]:
+    return newest_first(videos) if str(order).lower().startswith("new") else oldest_first(videos)
+
+
 def list_playlist(url: str, limit: Optional[int] = None) -> list[dict]:
     """Used by the ``list`` CLI command."""
     return enumerate_playlist(url, limit=limit)

@@ -16,6 +16,7 @@ crashes because of it.
 
 from __future__ import annotations
 
+import copy
 import datetime as _dt
 import json
 import os
@@ -109,6 +110,8 @@ class State:
         return self.data["videos"].get(video_id)
 
     def add_video(self, video_id: str, record: dict) -> None:
+        if not video_id:
+            raise ValueError("add_video() needs a video id (refusing to store an empty key)")
         record = dict(record)
         record.setdefault("added_at", _dt.datetime.now().isoformat(timespec="seconds"))
         self.data["videos"][video_id] = record
@@ -166,6 +169,13 @@ class State:
 
     def known_ids(self) -> set[str]:
         return set(self.data["videos"]) | set(self.data["skipped"])
+
+    def snapshot(self) -> dict:
+        """Deep copy of the state, for rollbacks inside a --force run."""
+        return copy.deepcopy(self.data)
+
+    def restore(self, snapshot: dict) -> None:
+        self.data = copy.deepcopy(snapshot)
 
     def summary(self) -> dict[str, Any]:
         return {

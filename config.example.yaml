@@ -57,10 +57,19 @@ watch:
   #               uploads reach the LLM)
   run_at_local: "19:00"
 
+  # Videos in this playlist that must never be processed (wrong uploads,
+  # announcements, group-presentation clips, ...).
+  # ignore_ids: ["qssKcjWhDYk"]
+
   # First encounter with a playlist: enumerate, stamp the baseline, mark every
   # current video as skipped. Zero LLM calls. Set true to process those videos
-  # once instead.
+  # once instead (oldest first).
   backfill_on_first_run: false
+
+  # Which of the skipped videos a catch-up run takes when `--limit` is used:
+  #   "oldest" (default) goes M1 -> M6 so lectures are learned in order,
+  #   "newest" starts from the latest upload.
+  backfill_order: "oldest"
 
 calendar:
   image:
