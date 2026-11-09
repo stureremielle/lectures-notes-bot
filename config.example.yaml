@@ -59,7 +59,7 @@ watch:
 
   # Videos in this playlist that must never be processed (wrong uploads,
   # announcements, group-presentation clips, ...).
-  # ignore_ids: ["qssKcjWhDYk"]
+  ignore_ids: ["qssKcjWhDYk"]   # KELOMPOK 1 ANIMASI UDP & TCP (not a lecture)
 
   # First encounter with a playlist: enumerate, stamp the baseline, mark every
   # current video as skipped. Zero LLM calls. Set true to process those videos
