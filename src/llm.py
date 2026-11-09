@@ -35,7 +35,7 @@ class LLMClient:
         timeout: int = 180,
         max_retries: int = 4,
         temperature: float = 0.2,
-        max_tokens: int = 4096,
+        max_tokens: int = 8000,
         extra_body: Optional[dict] = None,
     ):
         self.base_url = (base_url or "https://api.openai.com/v1").rstrip("/")
@@ -49,6 +49,8 @@ class LLMClient:
         self.max_tokens = max_tokens
         self.extra_body = extra_body or {}
         self.last_error: Optional[str] = None
+        # Token usage accumulated over this process (for cost reporting).
+        self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
 
     # -- low level ---------------------------------------------------------
     def _headers(self) -> dict:
@@ -95,6 +97,7 @@ class LLMClient:
             if resp.status_code == 200:
                 try:
                     data = resp.json()
+                    self._record_usage(data)
                     return data["choices"][0]["message"]["content"] or ""
                 except (ValueError, KeyError, IndexError, TypeError) as exc:
                     # A 200 with a broken body: retry once via json_mode fallback,
@@ -116,6 +119,24 @@ class LLMClient:
                 json_mode = False
                 continue
             raise LLMError(self.last_error)
+
+    def _record_usage(self, data: dict) -> None:
+        """Track prompt/completion tokens when the endpoint reports them."""
+        usage = data.get("usage") if isinstance(data, dict) else None
+        self.usage["calls"] += 1
+        if not isinstance(usage, dict):
+            return
+        self.usage["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
+        self.usage["completion_tokens"] += int(usage.get("completion_tokens") or 0)
+        log.info(
+            "LLM usage: prompt=%s completion=%s total=%s (accumulated: %s in / %s out over %s calls)",
+            usage.get("prompt_tokens"),
+            usage.get("completion_tokens"),
+            usage.get("total_tokens"),
+            self.usage["prompt_tokens"],
+            self.usage["completion_tokens"],
+            self.usage["calls"],
+        )
 
     def _sleep(self, attempt: int, reason: str, retry_after: Optional[str] = None) -> None:
         delay = min(2 ** attempt + random.random(), 60)
@@ -252,6 +273,6 @@ def make_client(cfg) -> LLMClient:
         timeout=cfg.get_int("llm.timeout", 180),
         max_retries=cfg.get_int("llm.max_retries", 4),
         temperature=float(cfg.get("llm.temperature", 0.2) or 0.2),
-        max_tokens=cfg.get_int("llm.max_tokens", 4096),
+        max_tokens=cfg.get_int("llm.max_tokens", 8000),
         extra_body=cfg.get("llm.extra_body", {}) if isinstance(cfg.get("llm.extra_body", {}), dict) else {},
     )

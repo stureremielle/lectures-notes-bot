@@ -183,7 +183,7 @@ def generate_notes(client, cfg, video: dict, transcript: str, meta: Optional[dic
     data = client.complete_json(
         messages[0]["content"],
         messages[1]["content"],
-        max_tokens=cfg.get_int("llm.max_tokens", 4096),
+        max_tokens=cfg.get_int("llm.max_tokens", 8000),
     )
     return data
 

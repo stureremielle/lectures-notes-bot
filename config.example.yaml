@@ -10,7 +10,10 @@ llm:
   api_key: "${OPENAI_API_KEY}"
   model: "${OPENAI_MODEL:-gpt-4o-mini}"
   temperature: 0.2
-  max_tokens: 4096
+  # Output cap. Notes + up to 10 assignments for a 2-hour lecture can reach
+  # ~2500-3000 tokens; 4096 truncated long notes into invalid JSON. This is a
+  # cap, not a cost: you only pay for tokens actually generated.
+  max_tokens: 8000
   timeout: 180
   max_retries: 4
 
