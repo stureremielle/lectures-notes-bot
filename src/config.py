@@ -288,12 +288,33 @@ class Config(Section):
         return warns
 
 
+def _report_bad_mount(p: Path) -> None:
+    """A directory where a file is expected is almost always a bind mount
+    created by Docker from a host path that did not exist at deploy time."""
+    try:
+        listing = ", ".join(sorted(x.name for x in p.iterdir())[:10]) or "empty"
+    except OSError:
+        listing = "unreadable"
+    raise ConfigError(
+        f"{p} is a directory, not a file ({listing}).\n"
+        f"This is Docker's placeholder for a bind mount whose HOST path did not\n"
+        f"exist when the stack was deployed. Fix it on the host:\n"
+        f"  sudo /opt/lecture-notes-bot/scripts/config.sh install   # create the file\n"
+        f"  OR upload config.yaml in Portainer's stack editor,\n"
+        f"then redeploy the stack. Check the mounted source with:\n"
+        f"  docker inspect lecture-notes-bot --format '{{{{range .Mounts}}}}{{{{.Source}}}} -> "
+        f"{{{{.Destination}}}}{{{{\"\\n\"}}}}{{{{end}}}}'"
+    )
+
+
 def load_config(path: Union[str, Path, None] = None) -> Config:
     """Load config.yaml (or the path given). Missing file -> safe defaults."""
     env_path = os.environ.get("LECTURE_BOT_CONFIG")
     candidate = path or env_path or DEFAULT_CONFIG_PATH
     p = Path(candidate)
     data: dict = {}
+    if p.is_dir():
+        _report_bad_mount(p)
     if p.exists():
         try:
             loaded = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
