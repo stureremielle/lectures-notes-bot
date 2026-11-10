@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import json
 import logging
 import os
 import sys
@@ -530,6 +531,71 @@ def cmd_list(args) -> int:
     return EXIT_OK
 
 
+def cmd_assignments(args) -> int:
+    """List the assignments found so far, straight from state (no LLM call).
+
+    The point is triage: which ones have a date (and can be reminded), which
+    ones only carry a spoken phrase, and what that phrase was.
+    """
+    cfg = load_config(getattr(args, "config", None))
+    setup_logging(cfg.get_str("logging.level", "INFO"))
+    state = State(cfg.state_path).load()
+    today = _dt.datetime.now(get_tz(cfg.timezone_name)).date()
+    items = A.collect_from_videos(state.all_videos())
+
+    if args.undated:
+        items = [i for i in items if not parse_date(i.get("due_date"))]
+    if args.open:
+        items = [
+            i
+            for i in items
+            if (parse_date(i.get("due_date")) or today) >= today
+        ]
+    items = A.sort_assignments(A.dedupe(items))
+
+    if args.json:
+        print(json.dumps(items, ensure_ascii=False, indent=2))
+        return EXIT_OK
+
+    if not items:
+        print("Tidak ada tugas.")
+        return EXIT_OK
+
+    print(f"{len(items)} tugas (tanggal hari ini: {today.isoformat()}):")
+    for item in items:
+        due = parse_date(item.get("due_date"))
+        if due:
+            delta = (due - today).days
+            if delta < 0:
+                status = f"{due.isoformat()}  ({abs(delta)} hari lalu)"
+            elif delta == 0:
+                status = f"{due.isoformat()}  (HARI INI)"
+            else:
+                status = f"{due.isoformat()}  ({delta} hari lagi)"
+            if item.get("due_date_inferred"):
+                status += f"  [ditafsirkan dari \"{item.get('due_text')}\"]"
+        else:
+            phrase = item.get("due_text")
+            status = f"tanpa tanggal        [ucapan: \"{phrase}\"]" if phrase else "tanpa tanggal"
+        course = (item.get("course") or "")[:30]
+        text = (item.get("text") or "")[:60]
+        print(f"  {status:<40} {course:<30} {text}")
+        if not args.brief:
+            src = item.get("video_title") or ""
+            if item.get("timestamp"):
+                src += f" @ {item['timestamp']}"
+            conf = item.get("confidence")
+            if src or conf:
+                print(f"      {conf or '-'} · {src}".rstrip())
+    undated = sum(1 for i in items if not parse_date(i.get("due_date")))
+    if undated:
+        print(
+            f"\n{undated} tugas tanpa tenggat — wajar untuk tugas yang dikerjakan di kelas; "
+            "tidak diingatkan. Pakai `--undated` untuk daftarnya."
+        )
+    return EXIT_OK
+
+
 def cmd_remind(args) -> int:
     ctx = build_context(args)
     result = reminders.run_reminder_pass(
@@ -723,6 +789,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_list = sub.add_parser("list", help="list videos of a playlist")
     p_list.add_argument("--playlist", help="playlist URL")
     p_list.set_defaults(func=cmd_list)
+
+    p_asg = sub.add_parser("assignments", help="list assignments from state (no LLM)")
+    p_asg.add_argument("--undated", action="store_true", help="only those without a due date")
+    p_asg.add_argument("--open", action="store_true", help="only due today or later")
+    p_asg.add_argument("--brief", action="store_true", help="one line per assignment")
+    p_asg.add_argument("--json", action="store_true", help="raw JSON")
+    p_asg.set_defaults(func=cmd_assignments)
 
     p_rem = sub.add_parser("remind", help="send due reminders now")
     p_rem.add_argument("--dry-run", action="store_true")

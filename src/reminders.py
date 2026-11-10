@@ -98,7 +98,7 @@ def pending(
     diagnostics["undated"] = A.undated_count(items)
     if diagnostics["undated"]:
         log.info(
-            "%d tugas tanpa tanggal (due_date null) tidak bisa diingatkan",
+            "%d tugas tanpa tenggat (mis. tugas dikerjakan di kelas) — tidak diingatkan, tidak masalah",
             diagnostics["undated"],
         )
     if send_time is not None and now.time() < send_time:

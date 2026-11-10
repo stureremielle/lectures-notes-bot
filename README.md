@@ -44,6 +44,7 @@ milik stack. `update.sh` menampilkan ringkasan state sebelum dan sesudah build.
 | Jalankan CLI di container (state yang sama) | `sudo ./scripts/bot.sh run --playlist "<URL>" --force --limit 1` |
 | Recreate container tanpa Portainer | `./scripts/recreate.sh` (memakai ulang env dari container lama) |
 | Ringkasan state | `sudo ./scripts/bot.sh state` |
+| Daftar tugas (tanpa LLM) | `./scripts/bot.sh assignments` · `--undated`, `--open`, `--json` |
 | Log | `docker logs --tail 50 -f lecture-notes-bot` |
 
 ### Pilih SATU pengelola: Portainer atau terminal
@@ -435,6 +436,7 @@ run [--playlist URL] [--all] [--limit N] [--force]
     [--no-discord] [--dry-run]
 watch [--all] [--dry-run] [--force] [--no-discord]
 list --playlist URL
+assignments [--undated] [--open] [--brief] [--json]
 remind [--dry-run] [--force] [--no-discord]
 calendar-image [--month YYYY-MM] [--out PATH] [--dry-run] [--no-discord]
 ```
