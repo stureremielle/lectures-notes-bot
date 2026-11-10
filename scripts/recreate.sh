@@ -77,7 +77,18 @@ fi
 say "Variabel yang dipakai:"
 grep -o '^[A-Z_]*' "$ENVFILE" | sed 's/^/    /'
 
-# 3. Replace the container.
+# 3. Remember the compose labels BEFORE removing the container: they are what
+#    Portainer matches a stack against, so a terminal-recreated container still
+#    appears inside its stack instead of making the stack look broken.
+LABEL_ARGS=$(docker inspect -f '{{range $k, $v := .Config.Labels}}{{$k}}={{$v}}
+{{end}}' "$APP_NAME" 2>/dev/null | grep '^com\.docker\.compose\.' | sed '/^$/d;s/^/--label /' | tr '\n' ' ' || true)
+if [ -n "$LABEL_ARGS" ]; then
+  say "Label stack Portainer disalin dari container lama"
+else
+  warn "container lama tidak punya label compose (bukan dari stack Portainer)"
+fi
+
+# 4. Replace the container.
 say "Menghapus container lama ($APP_NAME) — volume state tetap"
 docker rm -f "$APP_NAME" >/dev/null 2>&1 || true
 
@@ -89,6 +100,7 @@ docker run -d \
   -v "$MOUNT_CFG:/app/config.yaml:ro" \
   -v lecture-notes-data:/app/data \
   --log-driver json-file --log-opt max-size=10m --log-opt max-file=2 \
+  $LABEL_ARGS \
   "$IMAGE" python -m src.main watch --all >/dev/null
 
 sleep 4

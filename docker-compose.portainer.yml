@@ -39,6 +39,12 @@
 services:
   lecture-notes-bot:
     image: lecture-notes-bot:latest
+    # The image is built locally on the box and never pushed to a registry.
+    # Without this, redeploying through Portainer tries to pull
+    # "lecture-notes-bot:latest" from Docker Hub, fails with "pull access
+    # denied", and the stack is left marked as ERROR even though the running
+    # container is fine.
+    pull_policy: never
     container_name: lecture-notes-bot
     restart: unless-stopped
     environment:
