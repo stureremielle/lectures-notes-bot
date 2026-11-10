@@ -46,6 +46,34 @@ milik stack. `update.sh` menampilkan ringkasan state sebelum dan sesudah build.
 | Ringkasan state | `sudo ./scripts/bot.sh state` |
 | Log | `docker logs --tail 50 -f lecture-notes-bot` |
 
+### Pilih SATU pengelola: Portainer atau terminal
+
+Portainer mengenali container sebuah stack lewat label `com.docker.compose.*`.
+Container yang dibuat `scripts/recreate.sh` tidak memilikinya, jadi kalau stack
+yang sama masih ada di Portainer, menekan **Update the stack** akan gagal:
+
+```
+Conflict. The container name "/lecture-notes-bot" is already in use
+```
+
+Container lama tetap berjalan; hanya deploy Portainer yang batal. Pilih salah
+satu, jangan dua-duanya:
+
+**A. Terminal saja (yang dipakai sekarang)**
+
+1. Portainer → Stacks → `lecture-notes-bot` → **Delete**. Jangan centang opsi
+   yang menghapus volume — `lecture-notes-data` menyimpan state.
+2. Update = `sudo ./scripts/update.sh` lalu `./scripts/recreate.sh`.
+
+**B. Portainer saja**
+
+1. `docker rm -f lecture-notes-bot`
+2. Portainer → **Update the stack** (image lokal, `pull_policy: never`).
+3. Jangan pakai `recreate.sh` lagi; update cukup `build.sh` + tombol Update.
+
+`./scripts/doctor.sh` sekarang menampilkan bagian **Kepemilikan container** yang
+memberi tahu mana yang sedang berlaku.
+
 ### Pasang box baru dari nol
 
 ```bash

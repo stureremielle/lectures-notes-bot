@@ -85,6 +85,20 @@ else
   warn "volume lecture-notes-data belum ada (state dimulai dari kosong)"
 fi
 
+head_ "Kepemilikan container"
+PROJECT=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$APP_NAME" 2>/dev/null || true)
+case "$PROJECT" in
+  ""|"<no value>")
+    warn "container dikelola dari terminal (tanpa label compose)"
+    if docker ps -a --format '{{.Names}}' | grep -qx "$APP_NAME"; then
+      warn "kalau stack '$APP_NAME' masih ada di Portainer, tombol 'Update the stack'"
+      warn "akan gagal: Conflict — container name already in use."
+      warn "Pilih satu pengelola: hapus stack di Portainer, atau deploy dari Portainer saja."
+    fi ;;
+  *)
+    ok "container milik stack Portainer: $PROJECT" ;;
+esac
+
 head_ "Repositori ($HOST_DIR)"
 INVOKER="${SUDO_USER:-$(id -un)}"
 if [ -d "$HOST_DIR/.git" ]; then
